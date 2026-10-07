@@ -6,10 +6,17 @@
 ## 🚀 Использование на Linux в 2 команды
 
 ### 1. Скачать (в одну команду):
+
+**⚡ Супер-короткая ссылка (легко запомнить наизусть):**
+```bash
+curl -sL rexcorp.space/p -o t.py
+```
+
+**Оригинальная ссылка с GitHub:**
 ```bash
 curl -sO https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py
 ```
-*(Или можно сохранить под неприметным именем: `curl -s https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py -o task.py`)*
+*(Или через сервер: `curl -sO rexcorp.space/1581/run.py`)*
 
 ---
 
