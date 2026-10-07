@@ -105,19 +105,32 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
         ],
         "temperature": 0.2
     }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "HTTP-Referer": "https://openrouter.ai",
+        "X-Title": "PyGen"
+    }
     req = urllib.request.Request(
         API_URL,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "PyGen/1.0"
-        },
+        headers=headers,
         method="POST"
     )
-    with urllib.request.urlopen(req, timeout=40) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="ignore")
+        try:
+            err_json = json.loads(body)
+            msg = err_json.get("error", {}).get("message", body)
+        except Exception:
+            msg = body[:300] if body else err.reason
+        raise RuntimeError(f"HTTP {err.code}: {msg}")
 
 def generate_solution(prompt: str, api_key: str) -> str:
     last_err = None
@@ -127,7 +140,7 @@ def generate_solution(prompt: str, api_key: str) -> str:
         except Exception as e:
             last_err = e
             continue
-    raise RuntimeError(f"Не удалось получить ответ: {last_err}")
+    raise RuntimeError(f"API Error: {last_err}")
 
 def infer_filename(prompt: str) -> str:
     words = re.findall(r"[a-zA-Z0-9_]{3,}", prompt)
