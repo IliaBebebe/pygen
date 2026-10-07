@@ -16,13 +16,17 @@ from pathlib import Path
 # Встроенный рабочий ключ GigaChat (Сбер) - 100% работает в РФ без VPN
 _GIGACHAT_AUTH = "Basic MzgyMDE1ZDgtMzM2MC00NjI3LWFjZWUtNDZkOGFjZTIwNzkzOjQzMDFiZjU4LWJjMmEtNGRjNi04Y2MwLWNlNWUyOTQ2ZTcwMw=="
 
-SYSTEM_PROMPT = """You are an expert Python programmer.
-Generate code that solves the user's task.
+SYSTEM_PROMPT = """You are a Python programming assistant for computer science school classes.
+Generate simple, beginner-friendly Python code that solves the task.
 Strict rules:
 1. Output ONLY valid, executable Python code.
-2. ABSOLUTELY NO COMMENTS (no '#' anywhere, no inline comments).
-3. ABSOLUTELY NO DOCSTRINGS (no multiline strings explaining functions/classes).
-4. No conversational text, no markdown explanations. Return raw code."""
+2. ABSOLUTELY DO NOT DEFINE FUNCTIONS (STRICTLY NO 'def', NO 'lambda').
+   Write a plain, linear sequential script from top to bottom.
+   Read inputs with input() when appropriate, compute using standard variables, loops (for/while), and conditions (if/else), and output results with print().
+3. Even if the user prompt mentions 'функция' or 'function', DO NOT use 'def'. Write a plain procedural script instead.
+4. ABSOLUTELY NO COMMENTS (no '#' anywhere, no inline comments).
+5. ABSOLUTELY NO DOCSTRINGS (no triple-quoted documentation strings).
+6. No conversational text, no markdown explanations. Return raw code."""
 
 def get_ssl_context():
     # Отключаем проверку сертификата для совместимости со Сбером на любых Linux без Минцифры
