@@ -182,8 +182,37 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
 
     raise RuntimeError("Не удалось выполнить запрос ни через urllib, ни через curl")
 
-def generate_solution(prompt: str, api_key: str, custom_url: str = None) -> str:
-    # 1. Если запущен локальный Ollama или указан кастомный URL
+def query_deepseek(prompt: str, api_key: str) -> str:
+    url = "https://api.deepseek.com/chat/completions"
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"]
+
+def generate_solution(prompt: str, api_key: str, custom_url: str = None, provider: str = "auto") -> str:
+    # 1. Если явно выбран DeepSeek или передан ключ DeepSeek
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    if provider == "deepseek" or deepseek_key:
+        key = deepseek_key or api_key
+        return query_deepseek(prompt, key)
+
+    # 2. Если запущен локальный Ollama или указан кастомный URL
     local_model = get_local_ollama_model()
     if custom_url or local_model:
         model_name = local_model or "qwen2.5-coder:1.5b"
@@ -194,7 +223,7 @@ def generate_solution(prompt: str, api_key: str, custom_url: str = None) -> str:
             if custom_url:
                 raise RuntimeError(f"Ошибка кастомного сервера: {e}")
 
-    # 2. Иначе используем OpenRouter
+    # 3. Иначе используем OpenRouter
     last_err = None
     for model in MODELS:
         try:
@@ -206,9 +235,9 @@ def generate_solution(prompt: str, api_key: str, custom_url: str = None) -> str:
     err_str = str(last_err)
     if "security policy" in err_str.lower() or "403" in err_str:
         raise RuntimeError(
-            "Cloudflare блокирует бесплатные модели OpenRouter для IP датацентров/хостингов (VPS).\n"
-            "На обычном ПК (в школе, дома, с телефона) этот запрос проходит штатно.\n"
-            "Для работы на VPS установите локальную Ollama (curl -fsSL https://ollama.com/install.sh | sh && ollama run qwen2.5-coder:1.5b) — скрипт подхватит её автоматически."
+            "OpenRouter заблокирован в РФ без VPN.\n"
+            "Используйте DeepSeek (работает в РФ без VPN): зарегистрируйтесь на platform.deepseek.com (дает 5 млн бесплатных токенов) и запустите:\n"
+            "python3 run.py -p deepseek -k ВАШ_КЛЮЧ 'задание'"
         )
     raise RuntimeError(f"API Error: {last_err}")
 
@@ -223,8 +252,8 @@ def main():
     parser.add_argument("task", nargs="?", help="Текст задания")
     parser.add_argument("-d", "--dir", default=".", help="Папка назначения (по умолчанию: текущая)")
     parser.add_argument("-f", "--file", help="Имя выходного .py файла")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Тихий режим (минимум вывода)")
-    parser.add_argument("-k", "--key", help="API-ключ (опционально, уже встроен рабочий)")
+    parser.add_argument("-p", "--provider", choices=["auto", "deepseek", "openrouter", "ollama"], default="auto", help="Провайдер ИИ")
+    parser.add_argument("-k", "--key", help="API-ключ (опционально)")
     parser.add_argument("--url", help="Кастомный API URL (например, локальный Ollama)")
     args = parser.parse_args()
 
@@ -243,12 +272,12 @@ def main():
         if user_file:
             out_file = user_file
 
-    api_key = args.key or os.environ.get("OPENROUTER_API_KEY") or _DEFAULT_KEY
+    api_key = args.key or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENROUTER_API_KEY") or _DEFAULT_KEY
 
     if not args.quiet:
         print("[*] Generating code...")
 
-    raw_resp = generate_solution(task, api_key, custom_url=args.url)
+    raw_resp = generate_solution(task, api_key, custom_url=args.url, provider=args.provider)
     code = extract_code(raw_resp)
     code = remove_comments_and_docstrings(code)
 
