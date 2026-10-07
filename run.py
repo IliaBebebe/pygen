@@ -200,29 +200,104 @@ def generate_solution(prompt: str, custom_url: str = None) -> str:
     except Exception as err:
         raise RuntimeError(f"Ошибка генерации GigaChat: {err}")
 
+def resolve_target_dir(choice: str) -> Path:
+    home = Path.home()
+    c = choice.strip().lower()
+
+    if c in ("2", "desktop", "dt", "рабочий стол", "рабочий_стол"):
+        for name in ("Рабочий стол", "Desktop"):
+            p = home / name
+            if p.exists():
+                return p
+        p = home / "Desktop"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if c in ("3", "home", "~", "домашняя", "домашняя папка"):
+        return home
+
+    if c in ("4", "docs", "documents", "документы"):
+        for name in ("Документы", "Documents"):
+            p = home / name
+            if p.exists():
+                return p
+        p = home / "Documents"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if c in ("5", "downloads", "dl", "загрузки"):
+        for name in ("Загрузки", "Downloads"):
+            p = home / name
+            if p.exists():
+                return p
+        p = home / "Downloads"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    if c in ("1", ".", "current", "текущая", ""):
+        return Path(".").resolve()
+
+    # Если передан обычный путь (например /tmp или ./my_dir)
+    custom_p = Path(choice).expanduser().resolve()
+    custom_p.mkdir(parents=True, exist_ok=True)
+    return custom_p
+
 def main():
     parser = argparse.ArgumentParser(description="Автоматический генератор Python-кода без комментариев (РФ, без VPN).")
     parser.add_argument("task", nargs="?", help="Текст задания")
-    parser.add_argument("-d", "--dir", default=".", help="Папка назначения (по умолчанию: текущая)")
+    parser.add_argument("-d", "--dir", help="Папка назначения или пресет (desktop, home, docs, downloads)")
+    parser.add_argument("-dt", "--desktop", action="store_true", help="Сохранить на Рабочий стол")
+    parser.add_argument("--home", action="store_true", help="Сохранить в Домашнюю папку (~)")
+    parser.add_argument("--docs", action="store_true", help="Сохранить в Документы")
+    parser.add_argument("--downloads", action="store_true", help="Сохранить в Загрузки")
     parser.add_argument("-f", "--file", help="Имя выходного .py файла")
     parser.add_argument("-q", "--quiet", action="store_true", help="Тихий режим (минимум вывода)")
     parser.add_argument("--url", help="Кастомный API URL (например, локальный Ollama)")
     args = parser.parse_args()
 
     task = args.task
-    out_dir = args.dir
     out_file = args.file
+    target_dir = None
+
+    # Определение папки по флагам-пресетам
+    if args.desktop:
+        target_dir = resolve_target_dir("desktop")
+    elif args.home:
+        target_dir = resolve_target_dir("home")
+    elif args.docs:
+        target_dir = resolve_target_dir("docs")
+    elif args.downloads:
+        target_dir = resolve_target_dir("downloads")
+    elif args.dir:
+        target_dir = resolve_target_dir(args.dir)
 
     if not task:
+        print("=== Генератор решений Python ===")
         task = input("Задание: ").strip()
         if not task:
             sys.exit(0)
-        user_dir = input(f"Папка [{out_dir}]: ").strip()
-        if user_dir:
-            out_dir = user_dir
+
+        if not target_dir:
+            print("\nКуда сохранить решение?")
+            print("  1. Текущая папка (.)")
+            print("  2. Рабочий стол (Desktop)")
+            print("  3. Домашняя папка (~)")
+            print("  4. Документы (Documents)")
+            print("  5. Загрузки (Downloads)")
+            print("  6. Ввести свой путь вручную")
+            preset_choice = input("Выбор [1-6] (Enter = 1): ").strip()
+            if preset_choice == "6":
+                custom_input = input("Введите путь к папке: ").strip()
+                target_dir = resolve_target_dir(custom_input or ".")
+            else:
+                target_dir = resolve_target_dir(preset_choice)
+
         user_file = input("Имя файла (Enter для авто): ").strip()
         if user_file:
             out_file = user_file
+
+    if not target_dir:
+        target_dir = Path(".").resolve()
 
     if not args.quiet:
         print("[*] Generating code...")
@@ -236,7 +311,6 @@ def main():
     if not out_file.endswith(".py"):
         out_file += ".py"
 
-    target_dir = Path(out_dir).expanduser().resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / out_file
 
