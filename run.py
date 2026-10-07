@@ -105,6 +105,7 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
         ],
         "temperature": 0.2
     }
+    payload_bytes = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -113,24 +114,40 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
         "HTTP-Referer": "https://openrouter.ai",
         "X-Title": "PyGen"
     }
-    req = urllib.request.Request(
-        API_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST"
-    )
+
+    # 1. Сначала пробуем встроенный urllib
     try:
+        req = urllib.request.Request(API_URL, data=payload_bytes, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=40) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return data["choices"][0]["message"]["content"]
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="ignore")
-        try:
-            err_json = json.loads(body)
-            msg = err_json.get("error", {}).get("message", body)
-        except Exception:
-            msg = body[:300] if body else err.reason
-        raise RuntimeError(f"HTTP {err.code}: {msg}")
+    except Exception as err:
+        pass
+
+    # 2. Если urllib заблокирован WAF (ошибка 403 / Cloudflare), вызываем системный curl
+    import subprocess
+    cmd = [
+        "curl", "-s", "-X", "POST", API_URL,
+        "-H", f"Authorization: Bearer {api_key}",
+        "-H", "Content-Type: application/json",
+        "-H", "Accept: application/json",
+        "-H", "HTTP-Referer: https://openrouter.ai",
+        "-H", "X-Title: PyGen",
+        "-d", json.dumps(payload)
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=45)
+        if res.returncode == 0 and res.stdout:
+            data = json.loads(res.stdout)
+            if "choices" in data and data["choices"]:
+                return data["choices"][0]["message"]["content"]
+            if "error" in data:
+                err_msg = data["error"].get("message", str(data["error"]))
+                raise RuntimeError(err_msg)
+    except Exception as err:
+        raise RuntimeError(f"{err}")
+
+    raise RuntimeError("Не удалось выполнить запрос ни через urllib, ни через curl")
 
 def generate_solution(prompt: str, api_key: str) -> str:
     last_err = None
