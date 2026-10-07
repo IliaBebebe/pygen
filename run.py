@@ -96,6 +96,41 @@ def extract_code(text: str) -> str:
         return matches[0]
     return text.strip()
 
+def get_local_ollama_model() -> str:
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/tags", timeout=1)
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            for m in models:
+                if "code" in m.lower():
+                    return m
+            if models:
+                return models[0]
+    except Exception:
+        pass
+    return ""
+
+def query_ollama(model: str, prompt: str, base_url: str = "http://localhost:11434/v1") -> str:
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"]
+
 def query_model(model: str, prompt: str, api_key: str) -> str:
     payload = {
         "model": model,
@@ -115,7 +150,6 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
         "X-Title": "PyGen"
     }
 
-    # 1. Сначала пробуем встроенный urllib
     try:
         req = urllib.request.Request(API_URL, data=payload_bytes, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=40) as resp:
@@ -124,7 +158,6 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
     except Exception as err:
         pass
 
-    # 2. Если urllib заблокирован WAF (ошибка 403 / Cloudflare), вызываем системный curl
     import subprocess
     cmd = [
         "curl", "-s", "-X", "POST", API_URL,
@@ -149,7 +182,19 @@ def query_model(model: str, prompt: str, api_key: str) -> str:
 
     raise RuntimeError("Не удалось выполнить запрос ни через urllib, ни через curl")
 
-def generate_solution(prompt: str, api_key: str) -> str:
+def generate_solution(prompt: str, api_key: str, custom_url: str = None) -> str:
+    # 1. Если запущен локальный Ollama или указан кастомный URL
+    local_model = get_local_ollama_model()
+    if custom_url or local_model:
+        model_name = local_model or "qwen2.5-coder:1.5b"
+        url = custom_url or "http://localhost:11434/v1"
+        try:
+            return query_ollama(model_name, prompt, url)
+        except Exception as e:
+            if custom_url:
+                raise RuntimeError(f"Ошибка кастомного сервера: {e}")
+
+    # 2. Иначе используем OpenRouter
     last_err = None
     for model in MODELS:
         try:
@@ -157,6 +202,14 @@ def generate_solution(prompt: str, api_key: str) -> str:
         except Exception as e:
             last_err = e
             continue
+    
+    err_str = str(last_err)
+    if "security policy" in err_str.lower() or "403" in err_str:
+        raise RuntimeError(
+            "Cloudflare блокирует бесплатные модели OpenRouter для IP датацентров/хостингов (VPS).\n"
+            "На обычном ПК (в школе, дома, с телефона) этот запрос проходит штатно.\n"
+            "Для работы на VPS установите локальную Ollama (curl -fsSL https://ollama.com/install.sh | sh && ollama run qwen2.5-coder:1.5b) — скрипт подхватит её автоматически."
+        )
     raise RuntimeError(f"API Error: {last_err}")
 
 def infer_filename(prompt: str) -> str:
@@ -172,6 +225,7 @@ def main():
     parser.add_argument("-f", "--file", help="Имя выходного .py файла")
     parser.add_argument("-q", "--quiet", action="store_true", help="Тихий режим (минимум вывода)")
     parser.add_argument("-k", "--key", help="API-ключ (опционально, уже встроен рабочий)")
+    parser.add_argument("--url", help="Кастомный API URL (например, локальный Ollama)")
     args = parser.parse_args()
 
     task = args.task
@@ -194,7 +248,7 @@ def main():
     if not args.quiet:
         print("[*] Generating code...")
 
-    raw_resp = generate_solution(task, api_key)
+    raw_resp = generate_solution(task, api_key, custom_url=args.url)
     code = extract_code(raw_resp)
     code = remove_comments_and_docstrings(code)
 
