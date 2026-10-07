@@ -162,7 +162,7 @@ def main():
     api_key = args.key or os.environ.get("OPENROUTER_API_KEY") or _DEFAULT_KEY
 
     if not args.quiet:
-        print("[*] Генерация решения...")
+        print("[*] Generating code...")
 
     raw_resp = generate_solution(task, api_key)
     code = extract_code(raw_resp)
@@ -180,7 +180,7 @@ def main():
     target_path.write_text(code, encoding="utf-8")
 
     if not args.quiet:
-        print(f"[+] Сохранено в: {target_path}")
+        print(f"[+] Saved to: {target_path}")
         print("\n" + code + "\n")
     else:
         print(str(target_path))
