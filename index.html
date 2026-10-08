@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PyGen — Автономный генератор алгоритмического Python-кода</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #10b981;
+      --accent-glow: rgba(16, 185, 129, 0.18);
+      --accent-blue: #38bdf8;
+      --accent-purple: #a855f7;
+      --code-bg: #070a10;
+      --code-border: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.6;
+      padding: 32px 16px 80px;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+    }
+    .container { width: 100%; max-width: 820px; }
+    header { margin-bottom: 36px; text-align: center; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--accent-glow);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 9999px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 16px;
+    }
+    .badge-dot {
+      width: 8px; height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    h1 {
+      font-size: clamp(30px, 5.5vw, 44px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+      margin-bottom: 14px;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: clamp(15px, 2.4vw, 17px);
+      max-width: 680px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    }
+    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .step-num {
+      width: 32px; height: 32px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--accent-blue);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; flex-shrink: 0;
+    }
+    .step-num.green {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: var(--accent);
+    }
+    .step-num.purple {
+      background: rgba(168, 85, 247, 0.15);
+      border-color: rgba(168, 85, 247, 0.3);
+      color: var(--accent-purple);
+    }
+    .step-title { font-size: 18px; font-weight: 600; color: #ffffff; }
+    .step-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 14px; line-height: 1.5; }
+    .highlight-label {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .code-box.primary {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.04);
+    }
+    .code-box code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13.5px;
+      color: #38bdf8;
+      word-break: break-all;
+    }
+    .copy-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+    .copy-btn:hover { background: #334155; color: #ffffff; border-color: #475569; }
+    .copy-btn.copied {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .tag {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+    }
+    .tag code { font-family: 'JetBrains Mono', monospace; color: #38bdf8; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .feature-item {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .feature-item h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-item p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .ide-card {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .ide-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      margin-bottom: 8px;
+      width: fit-content;
+    }
+    .ide-card h3 { font-size: 16px; color: #ffffff; margin-bottom: 6px; }
+    .ide-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+    .ide-hotkey {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      padding: 4px 8px;
+      border-radius: 6px;
+      color: #f1f5f9;
+      width: fit-content;
+    }
+    .icon-svg {
+      width: 18px; height: 18px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    footer { text-align: center; margin-top: 40px; color: #64748b; font-size: 13px; }
+    footer a { color: #94a3b8; text-decoration: none; border-bottom: 1px dotted #475569; }
+    footer a:hover { color: #ffffff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Zero Sudo • Linux CLI & GUI • VS Code • IDLE • PyCharm
+      </div>
+      <h1>PyGen</h1>
+      <p class="subtitle">Автономный генератор чистого процедурного Python-кода для алгоритмических задач, олимпиадного программирования и тестирующих систем.</p>
+    </header>
+
+    <!-- СЕКЦИЯ 1: УСТАНОВКА В 1 КОМАНДУ -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num green">1</div>
+        <div class="step-title">Полная установка в 1 команду (Linux без sudo)</div>
+      </div>
+      
+      <p class="step-desc">
+        Разворачивает консольную утилиту <code>pygen</code>, скрытный GUI <code>pygen -g</code> и подключает расширения для <b>VS Code</b>, <b>IDLE</b> и <b>PyCharm</b> без прав администратора:
+      </p>
+
+      <div class="highlight-label">⚡ СУПЕР-КОРОТКАЯ КОМАНДА УСТАНОВКИ:</div>
+      <div class="code-box primary">
+        <code>curl -sL rexcorp.space/i | bash</code>
+        <button class="copy-btn" onclick="copyCode(this, 'curl -sL rexcorp.space/i | bash')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+
+      <p class="step-desc" style="margin-top: 12px; font-size: 13px;">
+        📌 <i>Альтернатива через GitHub:</i> <code>curl -sL https://raw.githubusercontent.com/IliaBebebe/pygen/main/install.sh | bash</code>
+      </p>
+    </div>
+
+    <!-- СЕКЦИЯ 2: ИНТЕГРАЦИЯ С РЕДАКТОРАМИ -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num purple">2</div>
+        <div class="step-title">Нативная интеграция с редакторами кода</div>
+      </div>
+      <p class="step-desc">Работайте с генератором прямо из любимой среды разработки без переключения в терминал:</p>
+
+      <div class="grid-3">
+        <!-- VS Code -->
+        <div class="ide-card">
+          <div>
+            <div class="ide-badge">VS Code Extension</div>
+            <h3>Visual Studio Code</h3>
+            <p>Выделите условие задачи в файле и нажмите хоткей — готовое решение мгновенно вставится на место курсора.</p>
+          </div>
+          <div class="ide-hotkey">Ctrl + Alt + G</div>
+        </div>
+
+        <!-- IDLE -->
+        <div class="ide-card">
+          <div>
+            <div class="ide-badge">IDLE Extension</div>
+            <h3>Python IDLE</h3>
+            <p>Нативный плагин в меню <i>Edit</i>. Выделите текст и нажмите клавишу — код заменит условие в редакторе.</p>
+          </div>
+          <div class="ide-hotkey">Alt + G</div>
+        </div>
+
+        <!-- PyCharm -->
+        <div class="ide-card">
+          <div>
+            <div class="ide-badge">External Tools</div>
+            <h3>PyCharm (JetBrains)</h3>
+            <p>Скопируйте задачу в буфер обмена и выберите инструмент в меню — файл решения создастся прямо в проекте.</p>
+          </div>
+          <div class="ide-hotkey">Tools &rarr; External Tools</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- СЕКЦИЯ 3: СКРЫТНЫЙ GUI -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-title">Скрытный компактный GUI интерфейс</div>
+      </div>
+      <p class="step-desc">
+        Минималистичный графический интерфейс с нейтральным заголовком «Заметки», темной темой и диалоговым окном выбора папки:
+      </p>
+
+      <div class="code-box">
+        <code>pygen -g</code>
+        <button class="copy-btn" onclick="copyCode(this, 'pygen -g')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+
+      <div class="grid-2" style="margin-top: 14px;">
+        <div class="feature-item">
+          <h3>⚡ Ctrl + Enter</h3>
+          <p>Мгновенно компилирует решение, сохраняет файл в выбранную директорию и <b>автоматически копирует готовый код в буфер обмена</b>.</p>
+        </div>
+        <div class="feature-item">
+          <h3>🛡️ Boss Key (Esc)</h3>
+          <p>При нажатии клавиши <code>Escape</code> окно моментально сворачивается в панель задач без предупреждений.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- СЕКЦИЯ 4: CLI И МНОГОСТРОЧНЫЙ ВВОД -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num">4</div>
+        <div class="step-title">Быстрый запуск в терминале (CLI)</div>
+      </div>
+
+      <p class="step-desc"><b>А. Решить задачу напрямую из буфера обмена (без вставки текста):</b></p>
+      <div class="code-box">
+        <code>pygen -c -dt</code>
+        <button class="copy-btn" onclick="copyCode(this, 'pygen -c -dt')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+
+      <p class="step-desc" style="margin-top: 14px;"><b>Б. Передать условие прямо аргументами (можно без кавычек):</b></p>
+      <div class="code-box">
+        <code>pygen найти факториал числа n -dt -f fact.py</code>
+        <button class="copy-btn" onclick="copyCode(this, 'pygen найти факториал числа n -dt -f fact.py')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+
+      <p class="step-desc" style="margin-top: 14px;"><b>В. Интерактивная вставка с защитой от переносов строк:</b></p>
+      <div class="code-box">
+        <code>pygen</code>
+        <button class="copy-btn" onclick="copyCode(this, 'pygen')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+      <p class="step-desc" style="font-size: 13px;"><i>(Вставляйте задачи с любыми переносами строк — умный буфер обработает их без сбоев. Enter на пустой строке отправляет).</i></p>
+
+      <div class="tag-row">
+        <span class="tag"><code>-dt</code> &rarr; Рабочий стол</span>
+        <span class="tag"><code>--home</code> &rarr; Домашняя папка (~)</span>
+        <span class="tag"><code>--docs</code> &rarr; Документы</span>
+        <span class="tag"><code>--downloads</code> &rarr; Загрузки</span>
+        <span class="tag"><code>-q</code> &rarr; Тихий режим</span>
+      </div>
+    </div>
+
+    <!-- СЕКЦИЯ 5: АРХИТЕКТУРНЫЕ СТАНДАРТЫ КОДА -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num">★</div>
+        <div class="step-title">Стандарты генерируемого кода</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="feature-item">
+          <h3>
+            <svg class="icon-svg" style="color: #38bdf8;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Переменные из 1 буквы
+          </h3>
+          <p>Строго соблюдает каноны олимпиадных скриптов: <code>a, b, c</code> для значений, <code>k</code> для счетчиков, <code>n, m</code> для размеров, <code>s</code> для строк, <code>l</code> для списков, <code>i, j</code> для индексов.</p>
+        </div>
+
+        <div class="feature-item">
+          <h3>
+            <svg class="icon-svg" style="color: #38bdf8;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Процедурный стиль (без def)
+          </h3>
+          <p>Генерирует последовательный алгоритмический скрипт (чтение <code>input()</code> &rarr; обработка &rarr; вывод <code>print()</code>). Никаких перегруженных функций и классов.</p>
+        </div>
+
+        <div class="feature-item">
+          <h3>
+            <svg class="icon-svg" style="color: #38bdf8;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            AST-очистка комментариев
+          </h3>
+          <p>Внутренний синтаксический анализатор полностью вырезает комментарии <code>#</code>, строковые docstring-блоки и лишние отступы.</p>
+        </div>
+
+        <div class="feature-item">
+          <h3>
+            <svg class="icon-svg" style="color: #38bdf8;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            GigaChat & DeepSeek
+          </h3>
+          <p>По умолчанию работает через Сбер GigaChat (бесплатно в РФ без VPN). Также поддерживается подключение DeepSeek через флаг <code>--deepseek -k KEY</code>.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- СЕКЦИЯ 6: ПОРТАТИВНЫЙ ЗАПУСК БЕЗ УСТАНОВКИ -->
+    <div class="card">
+      <div class="step-header">
+        <div class="step-num">⚡</div>
+        <div class="step-title">Портативный запуск на чистой системе</div>
+      </div>
+      <p class="step-desc">Если нужно быстро решить задачу на чужом компьютере без установки:</p>
+
+      <div class="code-box">
+        <code>curl -sL rexcorp.space/p -o t.py && python3 t.py -c -dt</code>
+        <button class="copy-btn" onclick="copyCode(this, 'curl -sL rexcorp.space/p -o t.py && python3 t.py -c -dt')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+    </div>
+
+    <footer>
+      Репозиторий проекта: <a href="https://github.com/IliaBebebe/pygen" target="_blank">github.com/IliaBebebe/pygen</a> • RexCorp Space
+    </footer>
+  </div>
+
+  <script>
+    function copyCode(btn, text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Скопировано!`;
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
