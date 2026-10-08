@@ -13,15 +13,26 @@ import tokenize
 import ast
 import time
 import subprocess
+import threading
+import itertools
 from pathlib import Path
 
-# Обеспечиваем безопасный вывод UTF-8 в консолях Windows (CP1251/CP866)
+# Универсальное обеспечение UTF-8 ввода/вывода (Linux LC_ALL=C, Windows CP1251/CP866, macOS)
+for stream in (sys.stdout, sys.stderr, sys.stdin):
+    try:
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.GetStdHandle(-11) # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            k32.SetConsoleMode(handle, mode.value | 0x0004) # ENABLE_VIRTUAL_TERMINAL_PROCESSING
     except Exception:
         pass
 
@@ -711,6 +722,141 @@ def launch_stealth_gui():
 
     root.mainloop()
 
+# --- Инструменты оформления современного CLI (ANSI / Box / Highlighting) ---
+class UI:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    CYAN = "\033[36m"
+    BRIGHT_CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    RED = "\033[91m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+    @classmethod
+    def enabled(cls) -> bool:
+        if os.environ.get("NO_COLOR"):
+            return False
+        if os.environ.get("TERM") == "dumb":
+            return False
+        if not sys.stdout.isatty():
+            return False
+        return True
+
+    @classmethod
+    def c(cls, text: str, *styles) -> str:
+        if not cls.enabled():
+            return str(text)
+        return f"{''.join(styles)}{text}{cls.RESET}"
+
+    @staticmethod
+    def strip_ansi(text: str) -> str:
+        return re.sub(r"\033\[[0-9;]*m", "", text)
+
+class Spinner:
+    def __init__(self, message: str = "Генерация решения..."):
+        self.message = message
+        self.stop_event = threading.Event()
+        self.thread = None
+
+    def _spin(self):
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        idx = 0
+        while not self.stop_event.is_set():
+            frame = frames[idx % len(frames)]
+            idx += 1
+            if UI.enabled():
+                sys.stdout.write(f"\r  {UI.c(frame, UI.BRIGHT_CYAN, UI.BOLD)}  {self.message} ")
+            else:
+                sys.stdout.write(f"\r  [*] {self.message} ")
+            sys.stdout.flush()
+            time.sleep(0.08)
+        sys.stdout.write("\r" + " " * (len(self.message) + 16) + "\r")
+        sys.stdout.flush()
+
+    def __enter__(self):
+        if sys.stdout.isatty():
+            self.thread = threading.Thread(target=self._spin, daemon=True)
+            self.thread.start()
+        else:
+            sys.stdout.write(f"  [*] {self.message}\n")
+            sys.stdout.flush()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.thread:
+            self.stop_event.set()
+            self.thread.join(timeout=0.6)
+
+def highlight_python_lines(code: str) -> list:
+    lines = code.strip().splitlines()
+    if not lines:
+        return []
+
+    line_num_width = max(2, len(str(len(lines))))
+    output = []
+
+    if not UI.enabled():
+        for idx, line in enumerate(lines, 1):
+            output.append(f"{idx:>{line_num_width}} │ {line}")
+        return output
+
+    token_pat = re.compile(
+        r'(\"[^\"]*\"|\'[^\']*\')|'
+        r'\b(for|while|if|elif|else|in|is|not|and|or|def|return|break|continue|pass|try|except|import|from|with|as|lambda)\b|'
+        r'\b(print|input|int|str|float|list|dict|set|tuple|range|len|sum|min|max|sorted|abs|all|any|map|filter|round|enumerate|zip)\b|'
+        r'\b(\d+(?:\.\d+)?)\b'
+    )
+
+    def colorize_match(m):
+        raw = m.group(0)
+        if m.group(1):
+            return f"\033[92m{raw}\033[0m"
+        elif m.group(2):
+            return f"\033[1;95m{raw}\033[0m"
+        elif m.group(3):
+            return f"\033[96m{raw}\033[0m"
+        elif m.group(4):
+            return f"\033[93m{raw}\033[0m"
+        return raw
+
+    for idx, line in enumerate(lines, 1):
+        num_str = UI.c(f"{idx:>{line_num_width}}", UI.GRAY)
+        sep = UI.c("│", UI.GRAY)
+        colored_line = token_pat.sub(colorize_match, line)
+        output.append(f"{num_str} {sep} {colored_line}")
+
+    return output
+
+def render_code_preview(code: str, target_path: Path, copied: bool = True):
+    lines = highlight_python_lines(code)
+    header = f"  ╭── {UI.c('[ Сгенерированное решение Python ]', UI.BRIGHT_CYAN, UI.BOLD)} " + "─" * 34
+    footer = "  ╰" + "─" * 65
+
+    print()
+    print(header)
+    for l in lines:
+        print(f"  │ {l}")
+    print(footer)
+    print()
+    print(f"  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Сохранено в: {UI.c(str(target_path), UI.WHITE, UI.BOLD)}")
+    if copied:
+        print(f"  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Код автоматически скопирован в буфер обмена!")
+    print()
+
+def render_banner(provider: str) -> str:
+    prov_label = "GigaChat (Сбер • Без VPN)" if provider == "gigachat" else provider.capitalize()
+    return (
+        f"  ╭─────────────────────────────────────────────────────────────╮\n"
+        f"  │  {UI.c('⚡ PyGen v2.0', UI.BRIGHT_CYAN, UI.BOLD)}  •  {UI.c('Автономный ассистент Python', UI.WHITE, UI.BOLD)}           │\n"
+        f"  │  Провайдер: {UI.c(prov_label, UI.GREEN)}  •  Статус: {UI.c('Онлайн', UI.GREEN)}             │\n"
+        f"  ╰─────────────────────────────────────────────────────────────╯"
+    )
+
 # --- Выбор директории в CLI ---
 def choose_save_directory_cli(preset_flag=None) -> Path:
     if preset_flag:
@@ -722,41 +868,283 @@ def choose_save_directory_cli(preset_flag=None) -> Path:
 
     options = []
     if active and active != known["current"]:
-        options.append((f"Активная рабочая папка (.py)", active))
+        options.append(("📁", "Активный проект (.py)", active))
     if recent and recent[0] != active and recent[0] != known["current"]:
-        options.append((f"Последняя использованная", recent[0]))
+        options.append(("🕒", "Недавняя папка", recent[0]))
 
-    options.append(("Текущая папка (.)", known["current"]))
-    options.append(("Рабочий стол (Desktop)", known["desktop"]))
-    options.append(("Загрузки (Downloads)", known["downloads"]))
-    options.append(("Документы (Documents)", known["docs"]))
-    options.append(("Домашняя папка (~)", known["home"]))
+    options.append(("📂", "Текущая папка (.)", known["current"]))
+    options.append(("🖥️", "Рабочий стол (Desktop)", known["desktop"]))
+    options.append(("⬇️", "Загрузки (Downloads)", known["downloads"]))
+    options.append(("📄", "Документы (Documents)", known["docs"]))
+    options.append(("🏠", "Домашняя папка (~)", known["home"]))
 
-    print("\nКуда сохранить решение?")
-    for idx, (label, path_obj) in enumerate(options, 1):
-        print(f"  {idx}. {label}: {path_obj}")
-    print(f"  {len(options) + 1}. Ввести свой путь вручную")
+    print(f"\n  {UI.c('Куда сохранить решение?', UI.WHITE, UI.BOLD)}")
+    for idx, (icon, label, path_obj) in enumerate(options, 1):
+        num = UI.c(f"[{idx}]", UI.CYAN, UI.BOLD)
+        short_path = str(path_obj)
+        home_str = str(Path.home())
+        if short_path.startswith(home_str) and len(home_str) > 1:
+            short_path = "~" + short_path[len(home_str):]
+        print(f"    {num}  {icon}  {label:<24} {UI.c(short_path, UI.GRAY)}")
+    print(f"    {UI.c(f'[{len(options) + 1}]', UI.GRAY, UI.BOLD)}  ✏️   Ввести свой путь вручную")
 
-    preset_choice = input(f"Выбор [1-{len(options)+1}] (Enter = 1): ").strip()
+    try:
+        preset_choice = input(f"\n  {UI.c('Выбор', UI.CYAN)} [1-{len(options)+1}] (Enter = 1): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return options[0][2]
+
     if not preset_choice:
-        return options[0][1]
+        return options[0][2]
 
     try:
         idx = int(preset_choice)
         if 1 <= idx <= len(options):
-            return options[idx - 1][1]
+            return options[idx - 1][2]
     except ValueError:
         pass
 
     if preset_choice == str(len(options) + 1):
-        custom = input("Введите путь к папке: ").strip()
-        p = Path(custom).expanduser().resolve()
-        p.mkdir(parents=True, exist_ok=True)
-        return p
+        try:
+            custom = input("  Введите путь к папке: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return options[0][2]
+        if custom:
+            p = Path(custom).expanduser().resolve()
+            p.mkdir(parents=True, exist_ok=True)
+            return p
 
     p = Path(preset_choice).expanduser().resolve()
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+def handle_interactive_clipboard(provider: str):
+    clip = get_clipboard_text()
+    if not clip:
+        print(f"\n  {UI.c('[!]', UI.YELLOW, UI.BOLD)} Буфер обмена пуст или недоступен.")
+        try:
+            ans = input(f"  {UI.c('Ввести условие задачи вручную? [Y/n]:', UI.CYAN)} ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return
+        if ans != "n":
+            handle_interactive_manual(provider)
+        return
+
+    # Превью задания из буфера
+    print()
+    preview = clip if len(clip) <= 240 else clip[:237] + "..."
+    preview_lines = preview.splitlines()[:5]
+    print(f"  ╭── {UI.c('[ Задание из буфера обмена ]', UI.BRIGHT_CYAN, UI.BOLD)} " + "─" * 38)
+    for l in preview_lines:
+        print(f"  │  {UI.c(l, UI.WHITE)}")
+    if len(clip.splitlines()) > 5:
+        print(f"  │  {UI.c('...', UI.GRAY)}")
+    print("  ╰" + "─" * 65)
+
+    target_dir = choose_save_directory_cli()
+    auto_name = infer_filename(clip)
+    try:
+        user_file = input(f"\n  {UI.c('Имя файла', UI.CYAN)} [{auto_name}]: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+    out_file = user_file if user_file else auto_name
+    if not out_file.endswith(".py"):
+        out_file += ".py"
+
+    print()
+    try:
+        with Spinner(f"Генерация чистого решения через {provider.upper()}..."):
+            code = generate_code_clean(clip, provider=provider)
+    except Exception as e:
+        print(f"  {UI.c('[✗]', UI.RED, UI.BOLD)} Ошибка генерации: {e}\n")
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / out_file
+    target_path.write_text(code, encoding="utf-8")
+    save_recent_directory(target_dir)
+    copied = set_clipboard_text(code)
+
+    render_code_preview(code, target_path, copied)
+    try:
+        input(f"  {UI.c('Нажмите Enter для продолжения...', UI.GRAY)} ")
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+def handle_interactive_manual(provider: str):
+    print()
+    print(f"  ╭── {UI.c('[ Ввод условия задачи ]', UI.BRIGHT_CYAN, UI.BOLD)} " + "─" * 43)
+    print(f"  │  Вставьте или введите условие задачи.")
+    print(f"  │  Нажмите {UI.c('Enter на пустой строке', UI.YELLOW)} (или {UI.c('Ctrl+D / Ctrl+Z', UI.YELLOW)}) для отправки.")
+    print("  ╰" + "─" * 65)
+    print()
+
+    lines = []
+    while True:
+        try:
+            line = input(f"  {UI.c('│', UI.CYAN)} ")
+            if not line:
+                if not lines:
+                    continue
+                if sys.platform != "win32":
+                    try:
+                        import select
+                        r, _, _ = select.select([sys.stdin], [], [], 0.05)
+                        if r:
+                            lines.append("")
+                            continue
+                    except Exception:
+                        pass
+                break
+            lines.append(line)
+        except (KeyboardInterrupt, EOFError):
+            break
+
+    task_text = "\n".join(lines).strip()
+    if not task_text:
+        print(f"\n  {UI.c('[!]', UI.YELLOW, UI.BOLD)} Условие не введено.")
+        return
+
+    target_dir = choose_save_directory_cli()
+    auto_name = infer_filename(task_text)
+    try:
+        user_file = input(f"\n  {UI.c('Имя файла', UI.CYAN)} [{auto_name}]: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+    out_file = user_file if user_file else auto_name
+    if not out_file.endswith(".py"):
+        out_file += ".py"
+
+    print()
+    try:
+        with Spinner(f"Генерация чистого решения через {provider.upper()}..."):
+            code = generate_code_clean(task_text, provider=provider)
+    except Exception as e:
+        print(f"  {UI.c('[✗]', UI.RED, UI.BOLD)} Ошибка генерации: {e}\n")
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / out_file
+    target_path.write_text(code, encoding="utf-8")
+    save_recent_directory(target_dir)
+    copied = set_clipboard_text(code)
+
+    render_code_preview(code, target_path, copied)
+    try:
+        input(f"  {UI.c('Нажмите Enter для продолжения...', UI.GRAY)} ")
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+def handle_interactive_settings() -> str:
+    cfg = load_config()
+    current = cfg.get("provider", "gigachat")
+    ds_key = cfg.get("deepseek_api_key", "")
+
+    while True:
+        key_display = f"{ds_key[:4]}...{ds_key[-4:]}" if len(ds_key) > 8 else ("Задан" if ds_key else "Не задан")
+        print()
+        print(f"  ╭── {UI.c('[ Настройки ИИ-провайдера ]', UI.BRIGHT_CYAN, UI.BOLD)} " + "─" * 40)
+        print(f"  │  Текущий провайдер: {UI.c(current.upper(), UI.GREEN, UI.BOLD)}")
+        print(f"  │  DeepSeek API Key:  {UI.c(key_display, UI.GRAY)}")
+        print(f"  │  Файл настроек:     {UI.c(str(CONFIG_FILE), UI.GRAY)}")
+        print("  ╰" + "─" * 65)
+        print()
+        print(f"  {UI.c('[1]', UI.CYAN, UI.BOLD)}  Сбер GigaChat (Бесплатно, РФ, без VPN — Рекомендуется)")
+        print(f"  {UI.c('[2]', UI.CYAN, UI.BOLD)}  DeepSeek (требуется личный API-ключ)")
+        print(f"  {UI.c('[3]', UI.CYAN, UI.BOLD)}  Ollama (локальная нейросеть http://localhost:11434)")
+        print(f"  {UI.c('[4]', UI.CYAN, UI.BOLD)}  ⚡ Проверить подключение к {current.upper()}")
+        print(f"  {UI.c('[0]', UI.GRAY, UI.BOLD)}  Назад в главное меню")
+        print()
+
+        try:
+            ch = input(f"  {UI.c('Выбор ›', UI.CYAN)} ").strip().strip("'\"")
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if ch == "1":
+            cfg["provider"] = "gigachat"
+            save_config(cfg)
+            current = "gigachat"
+            print(f"\n  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Установлен провайдер Сбер GigaChat!")
+        elif ch == "2":
+            try:
+                new_key = input(f"  Введите DeepSeek API Key [{key_display}]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                continue
+            if new_key:
+                cfg["deepseek_api_key"] = new_key
+                ds_key = new_key
+            cfg["provider"] = "deepseek"
+            save_config(cfg)
+            current = "deepseek"
+            print(f"\n  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Установлен провайдер DeepSeek!")
+        elif ch == "3":
+            cfg["provider"] = "ollama"
+            save_config(cfg)
+            current = "ollama"
+            print(f"\n  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Установлен локальный провайдер Ollama!")
+        elif ch == "4":
+            print()
+            try:
+                with Spinner(f"Тестовый запрос к {current.upper()}..."):
+                    res = generate_solution("выведи число 42", provider=current)
+                if res:
+                    print(f"  {UI.c('[✓]', UI.GREEN, UI.BOLD)} Подключение успешно! Провайдер {current.upper()} готов к работе.")
+                else:
+                    print(f"  {UI.c('[!]', UI.YELLOW, UI.BOLD)} Провайдер ответил пустым сообщением.")
+            except Exception as e:
+                print(f"  {UI.c('[✗]', UI.RED, UI.BOLD)} Ошибка подключения: {e}")
+            try:
+                input(f"\n  {UI.c('Нажмите Enter для продолжения...', UI.GRAY)} ")
+            except (KeyboardInterrupt, EOFError):
+                pass
+        elif ch in ("0", "q", ""):
+            break
+
+    return current
+
+def run_interactive_cli():
+    cfg = load_config()
+    current_provider = cfg.get("provider", "gigachat")
+
+    while True:
+        print()
+        print(render_banner(current_provider))
+        print()
+        print(f"  {UI.c('[1]', UI.BRIGHT_CYAN, UI.BOLD)}  📋  Решить задачу из буфера обмена (быстро)")
+        print(f"  {UI.c('[2]', UI.BRIGHT_CYAN, UI.BOLD)}  ✍️   Ввести условие задачи вручную (многострочный ввод)")
+        print(f"  {UI.c('[3]', UI.BRIGHT_CYAN, UI.BOLD)}  🖥️   Компактный скрытный GUI («Заметки»)")
+        print(f"  {UI.c('[4]', UI.BRIGHT_CYAN, UI.BOLD)}  ⚙️   Настройки (сменить ИИ-провайдер / API-ключ)")
+        print(f"  {UI.c('[5]', UI.BRIGHT_CYAN, UI.BOLD)}  🚀  Установить расширения IDE (VS Code, IDLE, PyCharm)")
+        print(f"  {UI.c('[0]', UI.GRAY, UI.BOLD)}  🚪  Выход")
+        print()
+
+        try:
+            choice = input(f"  {UI.c('pygen ›', UI.CYAN, UI.BOLD)} ").strip().strip("'\"")
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n\n  {UI.c('До свидания! 👋', UI.GRAY)}\n")
+            break
+
+        if choice in ("0", "q", "exit", "quit"):
+            print(f"\n  {UI.c('До свидания! 👋', UI.GRAY)}\n")
+            break
+
+        elif choice == "1":
+            handle_interactive_clipboard(current_provider)
+
+        elif choice == "2":
+            handle_interactive_manual(current_provider)
+
+        elif choice == "3":
+            launch_stealth_gui()
+
+        elif choice == "4":
+            current_provider = handle_interactive_settings()
+
+        elif choice == "5":
+            install_system()
+
+        else:
+            print(f"\n  {UI.c('Неверный выбор. Пожалуйста, введите число от 0 до 5.', UI.YELLOW)}")
 
 # --- Встроенные шаблоны расширений для автономной установки ---
 VSCODE_PACKAGE_JSON = """{
@@ -1439,16 +1827,17 @@ Categories=Utility;Development;
     print("\n📌 Способы использования:")
     if is_win:
         print("1. В терминале (CMD / PowerShell):")
-        print("   pygen \"задание\" -dt        # Сохранить на Рабочий стол")
+        print("   pygen                    # Современный интерактивный CLI ассистент")
+        print("   pygen \"задание\" -dt        # Сохранить решение на Рабочий стол")
         print("   pygen -c                 # Решить задание ПРЯМО ИЗ БУФЕРА ОБМЕНА")
-        print("   pygen                    # Интерактивный многострочный ввод")
         print("\n2. Скрытный компактный GUI:")
         print("   pygen -g                 # Открыть окно (Ctrl+Enter - решить, Esc - скрыть)")
         print("   (На Windows окно автоматически защищено от программ захвата экрана!)")
     else:
         print("1. В терминале (CLI):")
-        print("   pygen \"задание\" -dt")
-        print("   pygen -c -dt")
+        print("   pygen                    # Современный интерактивный CLI ассистент")
+        print("   pygen \"задание\" -dt        # Сохранить решение на Рабочий стол")
+        print("   pygen -c -dt             # Решить задание ПРЯМО ИЗ БУФЕРА ОБМЕНА")
         print("\n2. Скрытный GUI:")
         print("   pygen -g")
 
@@ -1475,6 +1864,7 @@ def main():
     parser.add_argument("--docs", action="store_true", help="Сохранить в Документы")
     parser.add_argument("--downloads", action="store_true", help="Сохранить в Загрузки")
     parser.add_argument("-f", "--file", help="Имя выходного .py файла")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Запустить современный интерактивный CLI интерфейс")
     parser.add_argument("-q", "--quiet", action="store_true", help="Тихий режим (выводит только путь к файлу)")
     parser.add_argument("--stdout", action="store_true", help="Вывести ТОЛЬКО сгенерированный код в stdout (для IDE)")
     parser.add_argument("--install", action="store_true", help="Автоматическая установка PyGen, CLI и расширений IDE в систему")
@@ -1491,6 +1881,15 @@ def main():
         launch_stealth_gui()
         sys.exit(0)
 
+    # Запуск современного интерактивного CLI (флаг -i или запуск без аргументов в TTY)
+    is_interactive = (
+        getattr(args, "interactive", False) or
+        (not args.task and not args.clip and not args.stdout and sys.stdin.isatty() and sys.stdout.isatty())
+    )
+    if is_interactive:
+        run_interactive_cli()
+        sys.exit(0)
+
     # Определение провайдера
     provider = args.provider
     if args.deepseek:
@@ -1500,7 +1899,7 @@ def main():
     task = read_multiline_task(args)
     if not task:
         if not args.quiet and not args.stdout:
-            print("Ошибка: задание не может быть пустым.")
+            print(UI.c("Ошибка: задание не может быть пустым.", UI.RED))
         sys.exit(0)
 
     # Режим вывода чистого кода в stdout (для интеграции с IDE)
@@ -1544,9 +1943,10 @@ def main():
         target_dir = Path(".").resolve()
 
     if not args.quiet:
-        print("[*] Генерация решения...")
-
-    code = generate_code_clean(task, provider=provider, api_key=args.key, custom_url=args.url)
+        with Spinner(f"Генерация чистого решения через {(provider or 'gigachat').upper()}..."):
+            code = generate_code_clean(task, provider=provider, api_key=args.key, custom_url=args.url)
+    else:
+        code = generate_code_clean(task, provider=provider, api_key=args.key, custom_url=args.url)
 
     if not out_file:
         out_file = infer_filename(task)
@@ -1563,9 +1963,7 @@ def main():
     set_clipboard_text(code)
 
     if not args.quiet:
-        print(f"[+] Сохранено в: {target_path}")
-        print(f"[+] Код также скопирован в буфер обмена!")
-        print("\n" + code + "\n")
+        render_code_preview(code, target_path, copied=True)
     else:
         print(str(target_path))
 
