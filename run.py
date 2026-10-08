@@ -223,6 +223,8 @@ def generate_code_clean(prompt: str, provider: str = None, api_key: str = None, 
     return remove_comments_and_docstrings(code)
 
 def remove_comments_and_docstrings(source_code: str) -> str:
+    source_code = source_code.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    source_code = source_code.replace("&nbsp;", " ").replace("\xa0", " ").replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
     try:
         tokens = tokenize.generate_tokens(io.StringIO(source_code).readline)
         tokens_clean = []
@@ -280,6 +282,8 @@ def remove_comments_and_docstrings(source_code: str) -> str:
     return "\n".join(clean_lines).strip() + "\n"
 
 def extract_code(text: str) -> str:
+    text = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    text = text.replace("&nbsp;", " ").replace("\xa0", " ").replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
     matches = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
     if matches:
         return matches[0]
