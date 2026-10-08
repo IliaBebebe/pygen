@@ -15,6 +15,16 @@ import time
 import subprocess
 from pathlib import Path
 
+# Обеспечиваем безопасный вывод UTF-8 в консолях Windows (CP1251/CP866)
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Встроенный рабочий ключ GigaChat (Сбер) - 100% работает в РФ без VPN
 _GIGACHAT_AUTH = "Basic MzgyMDE1ZDgtMzM2MC00NjI3LWFjZWUtNDZkOGFjZTIwNzkzOjQzMDFiZjU4LWJjMmEtNGRjNi04Y2MwLWNlNWUyOTQ2ZTcwMw=="
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
@@ -568,6 +578,16 @@ def launch_stealth_gui():
     except Exception:
         pass
 
+    # Защита от захвата экрана на Windows (WDA_EXCLUDEFROMCAPTURE)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) or root.winfo_id()
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)
+        except Exception:
+            pass
+
     # Переменные GUI
     current_target_dir = tk.StringVar(value=str(default_dir))
     provider_var = tk.StringVar(value=cfg.get("provider", "gigachat"))
@@ -738,6 +758,471 @@ def choose_save_directory_cli(preset_flag=None) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+# --- Встроенные шаблоны расширений для автономной установки ---
+VSCODE_PACKAGE_JSON = """{
+  "name": "pygen",
+  "displayName": "PyGen Code Assistant",
+  "description": "Скрытый генератор чистого Python-кода без функций и комментариев",
+  "version": "1.0.0",
+  "publisher": "pygen",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pygen.generate",
+        "title": "PyGen: Сгенерировать решение"
+      },
+      {
+        "command": "pygen.gui",
+        "title": "PyGen: Открыть скрытый GUI"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pygen.generate",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "pygen.generate",
+          "group": "modification@1"
+        },
+        {
+          "command": "pygen.gui",
+          "group": "modification@2"
+        }
+      ]
+    }
+  }
+}"""
+
+VSCODE_EXTENSION_JS = """const vscode = require('vscode');
+const { spawn } = require('child_process');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+
+function findPyGenCommand() {
+    const isWin = process.platform === 'win32';
+    const candidates = [
+        path.join(os.homedir(), '.local', 'bin', isWin ? 'pygen.cmd' : 'pygen'),
+        path.join(os.homedir(), '.local', 'bin', 'pygen'),
+        path.join(os.homedir(), '.local', 'bin', 'run.py'),
+        isWin ? 'pygen.cmd' : 'pygen',
+        'pygen'
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c)) {
+            return c;
+        }
+    }
+    return isWin ? 'pygen.cmd' : 'pygen';
+}
+
+function activate(context) {
+    const isWin = process.platform === 'win32';
+
+    let genCommand = vscode.commands.registerCommand('pygen.generate', async function () {
+        const editor = vscode.window.activeTextEditor;
+        let task = '';
+
+        if (editor && !editor.selection.isEmpty) {
+            task = editor.document.getText(editor.selection);
+        }
+
+        if (!task || !task.trim()) {
+            task = await vscode.window.showInputBox({
+                prompt: 'PyGen: Введите условие задачи (или выделите текст в редакторе)',
+                placeHolder: 'Например: дано n целых чисел, найти сумму положительных'
+            });
+        }
+
+        if (!task || !task.trim()) {
+            return;
+        }
+
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "PyGen генерирует решение...",
+            cancellable: false
+        }, async () => {
+            return new Promise((resolve) => {
+                const pyCmd = findPyGenCommand();
+                let child;
+                if (pyCmd.endsWith('.py')) {
+                    const pyExe = isWin ? 'python' : 'python3';
+                    child = spawn(pyExe, [pyCmd, '--stdout'], { stdio: ['pipe', 'pipe', 'pipe'] });
+                } else {
+                    child = spawn(pyCmd, ['--stdout'], { shell: isWin, stdio: ['pipe', 'pipe', 'pipe'] });
+                }
+
+                let stdoutData = '';
+                let stderrData = '';
+
+                child.stdout.on('data', chunk => { stdoutData += chunk.toString(); });
+                child.stderr.on('data', chunk => { stderrData += chunk.toString(); });
+
+                child.on('error', err => {
+                    vscode.window.showErrorMessage('PyGen не найден. Запустите скрипт установки');
+                    resolve();
+                });
+
+                child.on('close', code => {
+                    resolve();
+                    if (code === 0 && stdoutData.trim()) {
+                        if (editor) {
+                            editor.edit(editBuilder => {
+                                if (!editor.selection.isEmpty) {
+                                    editBuilder.replace(editor.selection, stdoutData);
+                                } else {
+                                    editBuilder.insert(editor.selection.active, stdoutData + '\\n');
+                                }
+                            });
+                            vscode.window.showInformationMessage('PyGen: Решение успешно вставлено!');
+                        }
+                    } else {
+                        vscode.window.showErrorMessage('PyGen ошибка: ' + (stderrData.trim() || 'Сбой генерации'));
+                    }
+                });
+
+                child.stdin.write(task);
+                child.stdin.end();
+            });
+        });
+    });
+
+    let guiCommand = vscode.commands.registerCommand('pygen.gui', function () {
+        const pyCmd = findPyGenCommand();
+        if (pyCmd.endsWith('.py')) {
+            const pyExe = isWin ? 'python' : 'python3';
+            spawn(pyExe, [pyCmd, '--gui'], { detached: true, stdio: 'ignore' }).unref();
+        } else {
+            spawn(pyCmd, ['--gui'], { shell: isWin, detached: true, stdio: 'ignore' }).unref();
+        }
+    });
+
+    context.subscriptions.push(genCommand, guiCommand);
+}
+
+function deactivate() {}
+
+module.exports = { activate, deactivate };"""
+
+IDLE_PYGEN_PY = """import os
+import sys
+import subprocess
+
+try:
+    from tkinter import simpledialog, messagebox
+except ImportError:
+    simpledialog = None
+    messagebox = None
+
+class PyGen:
+    menudefs = [
+        ('edit', [
+            ('Сгенерировать решение PyGen (Alt+G)', '<<pygen-solution>>'),
+        ])
+    ]
+
+    def __init__(self, editwin):
+        self.editwin = editwin
+
+    def pygen_solution_event(self, event=None):
+        text = self.editwin.text
+        task = ""
+        try:
+            task = text.get("sel.first", "sel.last").strip()
+        except Exception:
+            task = ""
+
+        if not task:
+            if simpledialog:
+                task = simpledialog.askstring("PyGen", "Введите условие задачи:")
+            else:
+                task = ""
+
+        if not task or not task.strip():
+            return "break"
+
+        def worker():
+            is_win = sys.platform == "win32"
+            candidates = [
+                os.path.expanduser("~/.local/bin/pygen.cmd"),
+                os.path.expanduser("~/.local/bin/run.py"),
+                os.path.expanduser("~/.local/bin/pygen"),
+            ]
+            bin_path = None
+            for c in candidates:
+                if os.path.exists(c):
+                    bin_path = c
+                    break
+
+            py_exe = sys.executable or ("python" if is_win else "python3")
+            if bin_path and bin_path.endswith(".py"):
+                cmd = [py_exe, bin_path, "--stdout"]
+            elif bin_path:
+                cmd = [bin_path, "--stdout"]
+            else:
+                cmd = ["pygen.cmd", "--stdout"] if is_win else ["pygen", "--stdout"]
+
+            try:
+                res = subprocess.run(
+                    cmd,
+                    input=task,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                    shell=is_win
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    code = res.stdout.strip()
+                    def update_editor():
+                        try:
+                            text.delete("sel.first", "sel.last")
+                        except Exception:
+                            pass
+                        text.insert("insert", code + "\\n")
+                    self.editwin.text.after(0, update_editor)
+                else:
+                    err = res.stderr.strip() or "Сбой генерации решения"
+                    if messagebox:
+                        self.editwin.text.after(0, lambda: messagebox.showerror("PyGen Ошибка", err))
+            except Exception as e:
+                if messagebox:
+                    self.editwin.text.after(0, lambda: messagebox.showerror("PyGen Ошибка", str(e)))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+        return "break"
+"""
+
+PYCHARM_TOOLS_XML = """<toolSet name="External Tools">
+  <tool name="PyGen: Решить из буфера" description="Генерирует решение задачи из буфера обмена и сохраняет в проект" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="false" showConsoleOnStdOut="false" showConsoleOnStdErr="false" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="$USER_HOME$/.local/bin/pygen" />
+      <option name="PARAMETERS" value="--clip" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="PyGen: Скрытый GUI" description="Открыть компактный скрытный интерфейс PyGen" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="false" showConsoleOnStdOut="false" showConsoleOnStdErr="false" synchronizeAfterRun="false">
+    <exec>
+      <option name="COMMAND" value="$USER_HOME$/.local/bin/pygen" />
+      <option name="PARAMETERS" value="--gui" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+</toolSet>"""
+
+def install_system():
+    is_win = sys.platform == "win32"
+    home = Path.home()
+    local_bin = home / ".local" / "bin"
+    local_bin.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 60)
+    print("      🚀 Установка PyGen (без прав администратора / sudo)     ")
+    print("=" * 60)
+    print(f"[*] Платформа: {sys.platform} (Python {sys.version.split()[0]})")
+
+    # 1. Получаем байты скрипта для установки
+    code_bytes = None
+    try:
+        this_file = Path(__file__).resolve()
+        code_bytes = this_file.read_bytes()
+    except NameError:
+        pass
+
+    if not code_bytes:
+        try:
+            if sys.argv and Path(sys.argv[0]).exists():
+                code_bytes = Path(sys.argv[0]).read_bytes()
+        except Exception:
+            pass
+
+    if not code_bytes:
+        import urllib.request
+        try:
+            code_bytes = urllib.request.urlopen("https://rexcorp.space/p", timeout=10).read()
+        except Exception:
+            code_bytes = urllib.request.urlopen("https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py", timeout=15).read()
+
+    target_py = local_bin / "run.py"
+    target_py.write_bytes(code_bytes)
+
+    if not is_win:
+        target_bin = local_bin / "pygen"
+        target_bin.write_bytes(code_bytes)
+        target_bin.chmod(0o755)
+
+        gui_launcher = local_bin / "pygen-gui"
+        gui_launcher.write_text("#!/usr/bin/env bash\nexec \"$HOME/.local/bin/pygen\" --gui \"$@\"\n", encoding="utf-8")
+        gui_launcher.chmod(0o755)
+    else:
+        cmd_pygen = local_bin / "pygen.cmd"
+        cmd_pygen.write_text("@echo off\npython \"%~dp0run.py\" %*\n", encoding="ascii")
+
+        cmd_gui = local_bin / "pygen-gui.cmd"
+        cmd_gui.write_text("@echo off\npython \"%~dp0run.py\" --gui %*\n", encoding="ascii")
+
+        ps_pygen = local_bin / "pygen.ps1"
+        ps_pygen.write_text("& python \"$PSScriptRoot\\run.py\" @args\n", encoding="ascii")
+
+        ps_gui = local_bin / "pygen-gui.ps1"
+        ps_gui.write_text("& python \"$PSScriptRoot\\run.py\" --gui @args\n", encoding="ascii")
+
+    print(f"[1/5] Исполняемые файлы установлены в: {local_bin}")
+
+    # 2. Настройка PATH
+    if is_win:
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_ALL_ACCESS)
+            try:
+                curr_path, _ = winreg.QueryValueEx(key, "Path")
+            except Exception:
+                curr_path = ""
+            bin_str = str(local_bin)
+            if bin_str.lower() not in curr_path.lower():
+                new_path = f"{bin_str};{curr_path}" if curr_path else bin_str
+                winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
+                print(f"[2/5] Каталог {local_bin} добавлен в User PATH (реестр Windows)")
+            else:
+                print(f"[2/5] Каталог {local_bin} уже присутствует в User PATH")
+            winreg.CloseKey(key)
+        except Exception as e:
+            print(f"[2/5] Запись в реестр PATH пропущена: {e}")
+    else:
+        add_line = 'export PATH="$HOME/.local/bin:$PATH"\n'
+        for rc in [home / ".bashrc", home / ".zshrc", home / ".profile"]:
+            if rc.exists():
+                content = rc.read_text(encoding="utf-8", errors="ignore")
+                if ".local/bin" not in content:
+                    rc.write_text(content + add_line, encoding="utf-8")
+        print(f"[2/5] Каталог {local_bin} добавлен в ~/.bashrc")
+
+    # 3. Ярлык на Рабочем столе
+    desktop_dir = home / "Desktop" if (home / "Desktop").exists() else home / "Рабочий стол"
+    if is_win:
+        try:
+            lnk_path = desktop_dir / "Заметки.lnk"
+            vbs_script = f'Set oWS = WScript.CreateObject("WScript.Shell")\nSet oLink = oWS.CreateShortcut("{lnk_path}")\noLink.TargetPath = "{local_bin}\\\\pygen-gui.cmd"\noLink.IconLocation = "shell32.dll,70"\noLink.WindowStyle = 7\noLink.Description = "Компактный редактор PyGen"\noLink.Save\n'
+            vbs_file = local_bin / "_create_shortcut.vbs"
+            vbs_file.write_text(vbs_script, encoding="cp1251")
+            subprocess.run(["cscript", "//nologo", str(vbs_file)], check=False)
+            vbs_file.unlink(missing_ok=True)
+            print(f"[3/5] Ярлык создан на Рабочем столе: {lnk_path}")
+        except Exception:
+            print("[3/5] Пропуск создания ярлыка на Рабочем столе")
+    else:
+        apps_dir = home / ".local" / "share" / "applications"
+        apps_dir.mkdir(parents=True, exist_ok=True)
+        desktop_file = apps_dir / "pygen.desktop"
+        desktop_file.write_text(f"""[Desktop Entry]
+Name=Заметки
+Comment=Скрытный черновик и генератор кода
+Exec={local_bin}/pygen --gui
+Icon=text-editor
+Terminal=false
+Type=Application
+Categories=Utility;Development;
+""", encoding="utf-8")
+        desktop_file.chmod(0o755)
+        print(f"[3/5] Создан desktop-ярлык: {desktop_file}")
+
+    # 4. VS Code
+    vscode_ext = home / ".vscode" / "extensions" / "pygen"
+    vscode_ext.mkdir(parents=True, exist_ok=True)
+    (vscode_ext / "package.json").write_text(VSCODE_PACKAGE_JSON, encoding="utf-8")
+    (vscode_ext / "extension.js").write_text(VSCODE_EXTENSION_JS, encoding="utf-8")
+    print(f"[4/5] [✓] VS Code: расширение установлено в {vscode_ext} (Ctrl+Alt+G)")
+
+    # 5. IDLE
+    idle_dir = home / ".idlerc"
+    idle_dir.mkdir(parents=True, exist_ok=True)
+    (idle_dir / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
+    (idle_dir / "pygen_idle.py").write_text("from .PyGen import PyGen\n", encoding="utf-8")
+
+    try:
+        res = subprocess.run([sys.executable, "-m", "site", "--user-site"], stdout=subprocess.PIPE, text=True)
+        user_site = Path(res.stdout.strip())
+        if user_site:
+            user_site.mkdir(parents=True, exist_ok=True)
+            (user_site / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
+            (user_site / "pygen.pth").write_text(str(idle_dir) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+    cfg_idle = idle_dir / "config-extensions.cfg"
+    idle_cfg_chunk = "[PyGen]\nenable=True\n\n[PyGen_cfgBindings]\npygen-solution=<Alt-Key-g>\n"
+    if not cfg_idle.exists():
+        cfg_idle.write_text(idle_cfg_chunk, encoding="utf-8")
+    else:
+        text = cfg_idle.read_text(encoding="utf-8", errors="ignore")
+        if "[PyGen]" not in text:
+            cfg_idle.write_text(text + "\n" + idle_cfg_chunk, encoding="utf-8")
+    print(f"      [✓] IDLE: расширение установлено в {idle_dir} (Alt+G)")
+
+    # 6. PyCharm
+    jb_bases = []
+    if is_win:
+        appdata = os.environ.get("APPDATA")
+        localappdata = os.environ.get("LOCALAPPDATA")
+        if appdata: jb_bases.append(Path(appdata) / "JetBrains")
+        if localappdata: jb_bases.append(Path(localappdata) / "JetBrains")
+    else:
+        jb_bases.append(home / ".config" / "JetBrains")
+
+    jb_found = False
+    for jb in jb_bases:
+        if jb.exists():
+            for ide in jb.iterdir():
+                if ide.is_dir() and ("pycharm" in ide.name.lower() or "idea" in ide.name.lower()):
+                    tools_dir = ide / "tools"
+                    tools_dir.mkdir(parents=True, exist_ok=True)
+                    target_xml = tools_dir / "External Tools.xml"
+                    if not target_xml.exists():
+                        target_xml.write_text(PYCHARM_TOOLS_XML, encoding="utf-8")
+                        jb_found = True
+                        print(f"      [✓] PyCharm ({ide.name}): добавлены External Tools")
+    if not jb_found:
+        print("      [-] PyCharm: каталоги настроек пока не созданы")
+
+    print("\n" + "=" * 60)
+    print("          🎉 Установка успешно завершена!                 ")
+    print("=" * 60)
+    print("\n📌 Способы использования:")
+    if is_win:
+        print("1. В терминале (CMD / PowerShell):")
+        print("   pygen \"задание\" -dt        # Сохранить на Рабочий стол")
+        print("   pygen -c                 # Решить задание ПРЯМО ИЗ БУФЕРА ОБМЕНА")
+        print("   pygen                    # Интерактивный многострочный ввод")
+        print("\n2. Скрытный компактный GUI:")
+        print("   pygen -g                 # Открыть окно (Ctrl+Enter - решить, Esc - скрыть)")
+        print("   (На Windows окно автоматически защищено от программ захвата экрана!)")
+    else:
+        print("1. В терминале (CLI):")
+        print("   pygen \"задание\" -dt")
+        print("   pygen -c -dt")
+        print("\n2. Скрытный GUI:")
+        print("   pygen -g")
+
+    print("\n3. В редакторах кода:")
+    print("   - VS Code: выделите условие -> Ctrl+Alt+G")
+    print("   - IDLE:    выделите условие -> Alt+G")
+    print("   - PyCharm: Меню Tools -> External Tools -> PyGen: Решить из буфера\n")
+
 # --- CLI Точка входа ---
 def main():
     parser = argparse.ArgumentParser(
@@ -758,8 +1243,14 @@ def main():
     parser.add_argument("-f", "--file", help="Имя выходного .py файла")
     parser.add_argument("-q", "--quiet", action="store_true", help="Тихий режим (выводит только путь к файлу)")
     parser.add_argument("--stdout", action="store_true", help="Вывести ТОЛЬКО сгенерированный код в stdout (для IDE)")
+    parser.add_argument("--install", action="store_true", help="Автоматическая установка PyGen, CLI и расширений IDE в систему")
     parser.add_argument("--url", help="Кастомный API URL (например, локальный Ollama)")
     args = parser.parse_args()
+
+    # Запуск автоустановки
+    if args.install:
+        install_system()
+        sys.exit(0)
 
     # Запуск GUI, если указан флаг
     if args.gui:

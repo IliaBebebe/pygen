@@ -40,23 +40,29 @@
 
 ---
 
-## ⚡ Быстрая установка в 1 команду (Linux)
+## ⚡ Быстрая установка в 1 команду (Linux & Windows)
 
-Установка выполняется одной командой в пользовательское окружение (не требует `sudo` или паролей):
+Установка выполняется одной командой в пользовательское окружение (не требует прав администратора `sudo` на Linux или UAC на Windows):
 
+### Linux (без sudo):
 ```bash
-curl -sL https://raw.githubusercontent.com/IliaBebebe/pygen/main/install.sh | bash
+curl -sL rexcorp.space/i | bash
 ```
+*(Или через GitHub: `curl -sL https://raw.githubusercontent.com/IliaBebebe/pygen/main/install.sh | bash`)*
 
-*(Если репозиторий уже клонирован локально: `bash install.sh`)*.
+### Windows (PowerShell / CMD / без прав администратора):
+```powershell
+curl -sL rexcorp.space/p | python - --install
+```
+*(Или в PowerShell: `irm rexcorp.space/win | iex` | Локально: двойной клик на `install.bat`)*
 
 ### Что делает установщик:
-- Размещает бинарные файлы `pygen` и `pygen-gui` в `~/.local/bin/`.
-- Добавляет `~/.local/bin` в `$PATH` пользователя (`~/.bashrc`, `~/.zshrc`, `~/.profile`).
-- Регистрирует нативное расширение для **VS Code** в `~/.vscode/extensions/pygen/`.
-- Регистрирует плагин для **IDLE** в `~/.idlerc/` и пользовательской директории модулей `site-packages`.
-- Создает конфигурацию External Tools для **PyCharm** в каталогах `~/.config/JetBrains/`.
-- Создает Desktop-ярлык `~/.local/share/applications/pygen.desktop`.
+- Размещает исполняемые файлы `pygen` и `pygen-gui` в `~/.local/bin/` (Linux) или `%USERPROFILE%\.local\bin\` (Windows).
+- Добавляет каталог в переменную `$PATH` пользователя (в `.bashrc` / `.zshrc` на Linux или в пользовательский реестр Windows).
+- Регистрирует нативное расширение для **VS Code** в `~/.vscode/extensions/pygen/` (`Ctrl + Alt + G`).
+- Регистрирует плагин для **IDLE** в `~/.idlerc/` и пользовательской директории модулей `site-packages` (`Alt + G`).
+- Создает конфигурацию External Tools для **PyCharm** в каталогах `JetBrains`.
+- Создает ярлык «Заметки» на Рабочем столе.
 
 ---
 
@@ -126,6 +132,7 @@ pygen-gui
   - `Ctrl + Enter` — сгенерировать решение (сохраняет файл и **автоматически помещает код в буфер обмена** для быстрой вставки).
   - `Esc` — экстренная кнопка (Boss Key): моментально сворачивает окно в панель задач.
 - **Интерактивный выбор папки:** Кнопка `[Обзор...]` открывает нативный диалог выбора целевого каталога, рядом расположены быстрые пресеты (`[Рабочий стол]`, `[Загрузки]`).
+- **Защита от захвата экрана (Windows):** На Windows окно автоматически аппаратно исключается из захвата экрана через Win32 API `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`. Программы удаленного мониторинга класса (Veyon, Teams, Zoom, Discord, OBS) видят рабочий стол без окна «Заметки».
 - **Переключатель провайдера:** Быстрое переключение в один клик между GigaChat и DeepSeek.
 
 ---

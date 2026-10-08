@@ -237,7 +237,7 @@
     <header>
       <div class="badge">
         <span class="badge-dot"></span>
-        Zero Sudo • Linux CLI & GUI • VS Code • IDLE • PyCharm
+        Zero Sudo / No Admin • Linux & Windows • VS Code • IDLE • PyCharm
       </div>
       <h1>PyGen</h1>
       <p class="subtitle">Автономный генератор чистого процедурного Python-кода для алгоритмических задач, олимпиадного программирования и тестирующих систем.</p>
@@ -247,14 +247,14 @@
     <div class="card">
       <div class="step-header">
         <div class="step-num green">1</div>
-        <div class="step-title">Полная установка в 1 команду (Linux без sudo)</div>
+        <div class="step-title">Быстрая установка в 1 команду (Linux & Windows)</div>
       </div>
       
       <p class="step-desc">
         Разворачивает консольную утилиту <code>pygen</code>, скрытный GUI <code>pygen -g</code> и подключает расширения для <b>VS Code</b>, <b>IDLE</b> и <b>PyCharm</b> без прав администратора:
       </p>
 
-      <div class="highlight-label">⚡ СУПЕР-КОРОТКАЯ КОМАНДА УСТАНОВКИ:</div>
+      <div class="highlight-label">🐧 LINUX (BASH / БЕЗ SUDO):</div>
       <div class="code-box primary">
         <code>curl -sL rexcorp.space/i | bash</code>
         <button class="copy-btn" onclick="copyCode(this, 'curl -sL rexcorp.space/i | bash')">
@@ -263,8 +263,17 @@
         </button>
       </div>
 
+      <div class="highlight-label" style="margin-top: 14px;">🪟 WINDOWS (POWERSHELL / CMD / БЕЗ АДМИН-ПРАВ):</div>
+      <div class="code-box primary">
+        <code>curl -sL rexcorp.space/p | python - --install</code>
+        <button class="copy-btn" onclick="copyCode(this, 'curl -sL rexcorp.space/p | python - --install')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          Скопировать
+        </button>
+      </div>
+
       <p class="step-desc" style="margin-top: 12px; font-size: 13px;">
-        📌 <i>Альтернатива через GitHub:</i> <code>curl -sL https://raw.githubusercontent.com/IliaBebebe/pygen/main/install.sh | bash</code>
+        📌 <i>В PowerShell также доступно:</i> <code>irm rexcorp.space/win | iex</code> &nbsp;•&nbsp; <i>Локально в папке репозитория:</i> двойной клик на <code>install.bat</code>
       </p>
     </div>
 
@@ -327,14 +336,18 @@
         </button>
       </div>
 
-      <div class="grid-2" style="margin-top: 14px;">
+      <div class="grid-3" style="margin-top: 14px;">
         <div class="feature-item">
           <h3>⚡ Ctrl + Enter</h3>
-          <p>Мгновенно компилирует решение, сохраняет файл в выбранную директорию и <b>автоматически копирует готовый код в буфер обмена</b>.</p>
+          <p>Мгновенно генерирует решение, сохраняет файл в выбранную папку и <b>копирует чистый код в буфер обмена</b>.</p>
         </div>
         <div class="feature-item">
           <h3>🛡️ Boss Key (Esc)</h3>
           <p>При нажатии клавиши <code>Escape</code> окно моментально сворачивается в панель задач без предупреждений.</p>
+        </div>
+        <div class="feature-item">
+          <h3>👁️ Anti-Capture (Win)</h3>
+          <p>На Windows окно аппаратно скрыто от программ мониторинга (Veyon, Teams, OBS) через <code>SetWindowDisplayAffinity</code>.</p>
         </div>
       </div>
     </div>

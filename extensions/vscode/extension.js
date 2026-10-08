@@ -5,9 +5,12 @@ const os = require('os');
 const fs = require('fs');
 
 function findPyGenCommand() {
+    const isWin = process.platform === 'win32';
     const candidates = [
+        path.join(os.homedir(), '.local', 'bin', isWin ? 'pygen.cmd' : 'pygen'),
         path.join(os.homedir(), '.local', 'bin', 'pygen'),
-        path.join(os.homedir(), 'pygen', 'run.py'),
+        path.join(os.homedir(), '.local', 'bin', 'run.py'),
+        isWin ? 'pygen.cmd' : 'pygen',
         'pygen'
     ];
     for (const c of candidates) {
@@ -15,10 +18,12 @@ function findPyGenCommand() {
             return c;
         }
     }
-    return 'pygen';
+    return isWin ? 'pygen.cmd' : 'pygen';
 }
 
 function activate(context) {
+    const isWin = process.platform === 'win32';
+
     let genCommand = vscode.commands.registerCommand('pygen.generate', async function () {
         const editor = vscode.window.activeTextEditor;
         let task = '';
@@ -47,9 +52,10 @@ function activate(context) {
                 const pyCmd = findPyGenCommand();
                 let child;
                 if (pyCmd.endsWith('.py')) {
-                    child = spawn('python3', [pyCmd, '--stdout'], { stdio: ['pipe', 'pipe', 'pipe'] });
+                    const pyExe = isWin ? 'python' : 'python3';
+                    child = spawn(pyExe, [pyCmd, '--stdout'], { stdio: ['pipe', 'pipe', 'pipe'] });
                 } else {
-                    child = spawn(pyCmd, ['--stdout'], { stdio: ['pipe', 'pipe', 'pipe'] });
+                    child = spawn(pyCmd, ['--stdout'], { shell: isWin, stdio: ['pipe', 'pipe', 'pipe'] });
                 }
 
                 let stdoutData = '';
@@ -59,7 +65,7 @@ function activate(context) {
                 child.stderr.on('data', chunk => { stderrData += chunk.toString(); });
 
                 child.on('error', err => {
-                    vscode.window.showErrorMessage('PyGen не найден. Запустите скрипт установки install.sh');
+                    vscode.window.showErrorMessage('PyGen не найден. Запустите скрипт установки install');
                     resolve();
                 });
 
@@ -90,9 +96,10 @@ function activate(context) {
     let guiCommand = vscode.commands.registerCommand('pygen.gui', function () {
         const pyCmd = findPyGenCommand();
         if (pyCmd.endsWith('.py')) {
-            spawn('python3', [pyCmd, '--gui'], { detached: true, stdio: 'ignore' }).unref();
+            const pyExe = isWin ? 'python' : 'python3';
+            spawn(pyExe, [pyCmd, '--gui'], { detached: true, stdio: 'ignore' }).unref();
         } else {
-            spawn(pyCmd, ['--gui'], { detached: true, stdio: 'ignore' }).unref();
+            spawn(pyCmd, ['--gui'], { shell: isWin, detached: true, stdio: 'ignore' }).unref();
         }
     });
 

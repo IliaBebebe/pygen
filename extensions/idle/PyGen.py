@@ -36,15 +36,34 @@ class PyGen:
             return "break"
 
         def worker():
-            bin_path = os.path.expanduser("~/.local/bin/pygen")
-            cmd = ["python3", bin_path, "--stdout"] if os.path.exists(bin_path) else ["pygen", "--stdout"]
+            is_win = sys.platform == "win32"
+            candidates = [
+                os.path.expanduser("~/.local/bin/pygen.cmd"),
+                os.path.expanduser("~/.local/bin/run.py"),
+                os.path.expanduser("~/.local/bin/pygen"),
+            ]
+            bin_path = None
+            for c in candidates:
+                if os.path.exists(c):
+                    bin_path = c
+                    break
+
+            py_exe = sys.executable or ("python" if is_win else "python3")
+            if bin_path and bin_path.endswith(".py"):
+                cmd = [py_exe, bin_path, "--stdout"]
+            elif bin_path:
+                cmd = [bin_path, "--stdout"]
+            else:
+                cmd = ["pygen.cmd", "--stdout"] if is_win else ["pygen", "--stdout"]
+
             try:
                 res = subprocess.run(
                     cmd,
                     input=task,
                     text=True,
                     capture_output=True,
-                    timeout=30
+                    timeout=30,
+                    shell=is_win
                 )
                 if res.returncode == 0 and res.stdout.strip():
                     code = res.stdout.strip()
