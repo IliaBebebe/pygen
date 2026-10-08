@@ -772,7 +772,10 @@ VSCODE_PACKAGE_JSON = """{
     "Programming Languages",
     "Snippets"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:pygen.generate",
+    "onCommand:pygen.gui"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
@@ -919,28 +922,126 @@ function deactivate() {}
 
 module.exports = { activate, deactivate };"""
 
-IDLE_PYGEN_PY = """import os
+IDLE_PYGEN_PY = r'''import os
 import sys
 import subprocess
+import threading
+import queue
 
 try:
     from tkinter import simpledialog, messagebox
+    import tkinter as tk
 except ImportError:
     simpledialog = None
     messagebox = None
+    tk = None
 
 class PyGen:
     menudefs = [
         ('edit', [
-            ('Сгенерировать решение PyGen (Alt+G)', '<<pygen-solution>>'),
-        ])
+            None,
+            ('PyGen: Сгенерировать решение (Alt+G)', '<<pygen-solution>>'),
+        ]),
+        ('format', [
+            None,
+            ('PyGen: Сгенерировать решение (Alt+G)', '<<pygen-solution>>'),
+        ]),
+        ('run', [
+            None,
+            ('PyGen: Сгенерировать решение (Alt+G)', '<<pygen-solution>>'),
+        ]),
     ]
 
     def __init__(self, editwin):
         self.editwin = editwin
+        self._bind_events()
+        self._add_menubar_entry()
+
+    def _bind_events(self):
+        text = getattr(self.editwin, "text", None)
+        top = getattr(self.editwin, "top", None)
+        if not text:
+            return
+
+        try:
+            text.bind("<<pygen-solution>>", self.pygen_solution_event)
+        except Exception:
+            pass
+
+        key_seqs = (
+            "<Alt-Key-g>", "<Alt-Key-G>", "<Alt-g>", "<Alt-G>",
+            "<Alt-Key-Cyrillic_pe>", "<Alt-Key-Cyrillic_PE>",
+            "<Control-Alt-Key-g>", "<Control-Alt-Key-G>",
+        )
+
+        for seq in key_seqs:
+            try:
+                text.event_add("<<pygen-solution>>", seq)
+            except Exception:
+                pass
+
+        for target in (text, top):
+            if not target:
+                continue
+            for seq in key_seqs:
+                try:
+                    target.bind(seq, self.pygen_solution_event)
+                except Exception:
+                    pass
+            try:
+                target.bind("<Alt-KeyPress>", self._check_alt_key, add="+")
+            except Exception:
+                pass
+
+    def _check_alt_key(self, event):
+        if not event:
+            return
+        code = getattr(event, "keycode", 0)
+        sym = getattr(event, "keysym", "").lower()
+        if code == 71 or sym in ("g", "cyrillic_pe"):
+            self.pygen_solution_event(event)
+            return "break"
+
+    def _add_menubar_entry(self):
+        menubar = getattr(self.editwin, "menubar", None)
+        if not menubar or not tk:
+            return
+
+        try:
+            end_val = menubar.index("end")
+            count = (end_val + 1) if end_val is not None else 0
+            for i in range(count):
+                try:
+                    lbl = menubar.tk.call(menubar._w, "entrycget", i, "-label")
+                    if lbl == "PyGen":
+                        return
+                except Exception:
+                    pass
+
+            m = tk.Menu(menubar, tearoff=False)
+            m.add_command(
+                label="Сгенерировать решение (Alt+G)",
+                command=self.pygen_solution_event,
+                accelerator="Alt+G"
+            )
+            m.add_command(
+                label="Решить из буфера обмена",
+                command=self.solve_from_clipboard
+            )
+            m.add_separator()
+            m.add_command(
+                label="Открыть скрытный GUI (Заметки)",
+                command=self.open_gui
+            )
+            menubar.add_cascade(label="PyGen", menu=m)
+        except Exception:
+            pass
 
     def pygen_solution_event(self, event=None):
-        text = self.editwin.text
+        text = getattr(self.editwin, "text", None)
+        if not text:
+            return "break"
+
         task = ""
         try:
             task = text.get("sel.first", "sel.last").strip()
@@ -948,19 +1049,51 @@ class PyGen:
             task = ""
 
         if not task:
+            parent_win = getattr(self.editwin, "top", None) or text
             if simpledialog:
-                task = simpledialog.askstring("PyGen", "Введите условие задачи:")
+                task = simpledialog.askstring(
+                    "PyGen",
+                    "Введите условие задачи (или выделите текст):",
+                    parent=parent_win
+                )
             else:
                 task = ""
 
         if not task or not task.strip():
             return "break"
 
+        self._run_solve(task)
+        return "break"
+
+    def solve_from_clipboard(self, event=None):
+        text = getattr(self.editwin, "text", None)
+        if not text:
+            return "break"
+        task = ""
+        try:
+            task = text.clipboard_get().strip()
+        except Exception:
+            task = ""
+        if not task:
+            parent_win = getattr(self.editwin, "top", None) or text
+            if messagebox:
+                messagebox.showwarning("PyGen", "Буфер обмена пуст!", parent=parent_win)
+            return "break"
+        self._run_solve(task)
+        return "break"
+
+    def _run_solve(self, task):
+        text = getattr(self.editwin, "text", None)
+        if not text:
+            return
+
+        res_q = queue.Queue()
+
         def worker():
             is_win = sys.platform == "win32"
             candidates = [
-                os.path.expanduser("~/.local/bin/pygen.cmd"),
                 os.path.expanduser("~/.local/bin/run.py"),
+                os.path.expanduser("~/.local/bin/pygen.cmd"),
                 os.path.expanduser("~/.local/bin/pygen"),
             ]
             bin_path = None
@@ -977,36 +1110,70 @@ class PyGen:
             else:
                 cmd = ["pygen.cmd", "--stdout"] if is_win else ["pygen", "--stdout"]
 
+            kwargs = {
+                "input": task,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "capture_output": True,
+                "timeout": 35,
+            }
+            if is_win:
+                kwargs["creationflags"] = 0x08000000
+
             try:
-                res = subprocess.run(
-                    cmd,
-                    input=task,
-                    text=True,
-                    capture_output=True,
-                    timeout=30,
-                    shell=is_win
-                )
+                res = subprocess.run(cmd, **kwargs)
                 if res.returncode == 0 and res.stdout.strip():
-                    code = res.stdout.strip()
-                    def update_editor():
-                        try:
-                            text.delete("sel.first", "sel.last")
-                        except Exception:
-                            pass
-                        text.insert("insert", code + "\\n")
-                    self.editwin.text.after(0, update_editor)
+                    res_q.put((res.stdout.strip(), None))
                 else:
                     err = res.stderr.strip() or "Сбой генерации решения"
-                    if messagebox:
-                        self.editwin.text.after(0, lambda: messagebox.showerror("PyGen Ошибка", err))
+                    res_q.put((None, err))
             except Exception as e:
-                if messagebox:
-                    self.editwin.text.after(0, lambda: messagebox.showerror("PyGen Ошибка", str(e)))
+                res_q.put((None, str(e)))
 
-        import threading
+        def check_result():
+            try:
+                code, err = res_q.get_nowait()
+                if code:
+                    try:
+                        text.delete("sel.first", "sel.last")
+                    except Exception:
+                        pass
+                    text.insert("insert", code + "\n")
+                    try:
+                        text.clipboard_clear()
+                        text.clipboard_append(code)
+                    except Exception:
+                        pass
+                else:
+                    parent_win = getattr(self.editwin, "top", None) or text
+                    if messagebox:
+                        messagebox.showerror("PyGen Ошибка", err or "Сбой генерации", parent=parent_win)
+            except queue.Empty:
+                text.after(50, check_result)
+
         threading.Thread(target=worker, daemon=True).start()
+        text.after(20, check_result)
+
+    def open_gui(self, event=None):
+        def _launch():
+            is_win = sys.platform == "win32"
+            run_py = os.path.expanduser("~/.local/bin/run.py")
+            if os.path.exists(run_py):
+                cmd = [sys.executable, run_py, "--gui"]
+            else:
+                cmd = ["pygen.cmd", "--gui"] if is_win else ["pygen", "--gui"]
+            try:
+                if is_win:
+                    subprocess.Popen(cmd, creationflags=0x08000000)
+                else:
+                    subprocess.Popen(cmd, start_new_session=True)
+            except Exception:
+                pass
+
+        threading.Thread(target=_launch, daemon=True).start()
         return "break"
-"""
+'''
 
 PYCHARM_TOOLS_XML = """<toolSet name="External Tools">
   <tool name="PyGen: Решить из буфера" description="Генерирует решение задачи из буфера обмена и сохраняет в проект" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="false" showConsoleOnStdOut="false" showConsoleOnStdErr="false" synchronizeAfterRun="true">
@@ -1039,24 +1206,42 @@ def install_system():
     # 1. Получаем байты скрипта для установки
     code_bytes = None
     try:
-        this_file = Path(__file__).resolve()
-        code_bytes = this_file.read_bytes()
-    except NameError:
+        f_name = globals().get("__file__")
+        if f_name and not str(f_name).startswith("<"):
+            f_path = Path(f_name).resolve()
+            if f_path.is_file():
+                code_bytes = f_path.read_bytes()
+    except Exception:
         pass
 
     if not code_bytes:
         try:
-            if sys.argv and Path(sys.argv[0]).exists():
-                code_bytes = Path(sys.argv[0]).read_bytes()
+            if sys.argv and sys.argv[0] and not str(sys.argv[0]).startswith("<"):
+                arg_path = Path(sys.argv[0]).resolve()
+                if arg_path.is_file():
+                    code_bytes = arg_path.read_bytes()
         except Exception:
             pass
 
     if not code_bytes:
         import urllib.request
-        try:
-            code_bytes = urllib.request.urlopen("https://rexcorp.space/p", timeout=10).read()
-        except Exception:
-            code_bytes = urllib.request.urlopen("https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py", timeout=15).read()
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        urls = [
+            "https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py",
+            "https://rexcorp.space/p",
+        ]
+        for u in urls:
+            try:
+                req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+                data = urllib.request.urlopen(req, context=ctx, timeout=12).read()
+                if data and len(data) > 1000:
+                    code_bytes = data
+                    break
+            except Exception:
+                continue
 
     target_py = local_bin / "run.py"
     target_py.write_bytes(code_bytes)
@@ -1165,13 +1350,16 @@ Categories=Utility;Development;
         pass
 
     cfg_idle = idle_dir / "config-extensions.cfg"
-    idle_cfg_chunk = "[PyGen]\nenable=True\n\n[PyGen_cfgBindings]\npygen-solution=<Alt-Key-g>\n"
+    idle_cfg_chunk = "[PyGen]\nenable=True\nenable_editor=True\nenable_shell=True\n\n[PyGen_cfgBindings]\npygen-solution=<Alt-Key-g>\n"
     if not cfg_idle.exists():
         cfg_idle.write_text(idle_cfg_chunk, encoding="utf-8")
     else:
         text = cfg_idle.read_text(encoding="utf-8", errors="ignore")
         if "[PyGen]" not in text:
             cfg_idle.write_text(text + "\n" + idle_cfg_chunk, encoding="utf-8")
+        elif "enable_shell" not in text:
+            # Обновляем старую секцию, если она была записана ранее без enable_shell
+            cfg_idle.write_text(text.replace("[PyGen]\nenable=True", "[PyGen]\nenable=True\nenable_editor=True\nenable_shell=True"), encoding="utf-8")
     print(f"      [✓] IDLE: расширение установлено в {idle_dir} (Alt+G)")
 
     # 6. PyCharm

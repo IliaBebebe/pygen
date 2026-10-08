@@ -11,7 +11,10 @@
     "Programming Languages",
     "Snippets"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:pygen.generate",
+    "onCommand:pygen.gui"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
