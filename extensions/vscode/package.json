@@ -1,0 +1,47 @@
+{
+  "name": "pygen",
+  "displayName": "PyGen Code Assistant",
+  "description": "Скрытый генератор чистого Python-кода без функций и комментариев",
+  "version": "1.0.0",
+  "publisher": "pygen",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pygen.generate",
+        "title": "PyGen: Сгенерировать решение"
+      },
+      {
+        "command": "pygen.gui",
+        "title": "PyGen: Открыть скрытый GUI"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pygen.generate",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "pygen.generate",
+          "group": "modification@1"
+        },
+        {
+          "command": "pygen.gui",
+          "group": "modification@2"
+        }
+      ]
+    }
+  }
+}
