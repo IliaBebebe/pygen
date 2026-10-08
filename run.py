@@ -1339,28 +1339,54 @@ Categories=Utility;Development;
     (idle_dir / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
     (idle_dir / "pygen_idle.py").write_text("from .PyGen import PyGen\n", encoding="utf-8")
 
+    user_sites = []
     try:
         res = subprocess.run([sys.executable, "-m", "site", "--user-site"], stdout=subprocess.PIPE, text=True)
-        user_site = Path(res.stdout.strip())
-        if user_site:
-            user_site.mkdir(parents=True, exist_ok=True)
-            (user_site / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
-            (user_site / "pygen.pth").write_text(str(idle_dir) + "\n", encoding="utf-8")
+        if res.stdout.strip():
+            user_sites.append(Path(res.stdout.strip()))
     except Exception:
         pass
 
+    if is_win:
+        appdata_py = home / "AppData" / "Roaming" / "Python"
+        if appdata_py.exists():
+            for d in appdata_py.iterdir():
+                if d.is_dir() and d.name.lower().startswith("python"):
+                    user_sites.append(d / "site-packages")
+
+        try:
+            import idlelib
+            idlelib_dir = Path(idlelib.__file__).parent
+            (idlelib_dir / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
+            def_path = idlelib_dir / "config-extensions.def"
+            if def_path.exists():
+                def_text = def_path.read_text(encoding="utf-8", errors="ignore")
+                if "[PyGen]" not in def_text:
+                    def_chunk = "\n\n[PyGen]\nenable= True\nenable_shell= True\nenable_editor= True\n\n[PyGen_cfgBindings]\npygen-solution= <Control-Alt-Key-g>\n"
+                    def_path.write_text(def_text + def_chunk, encoding="utf-8")
+        except Exception:
+            pass
+
+    for usp in set(user_sites):
+        try:
+            usp.mkdir(parents=True, exist_ok=True)
+            (usp / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
+            (usp / "pygen_idle.py").write_text("from .PyGen import PyGen\n", encoding="utf-8")
+            (usp / "pygen.pth").write_text(str(idle_dir) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
     cfg_idle = idle_dir / "config-extensions.cfg"
-    idle_cfg_chunk = "[PyGen]\nenable=True\nenable_editor=True\nenable_shell=True\n\n[PyGen_cfgBindings]\npygen-solution=<Alt-Key-g>\n"
+    idle_cfg_chunk = "[PyGen]\nenable=True\nenable_editor=True\nenable_shell=True\n\n[PyGen_cfgBindings]\npygen-solution=<Control-Alt-Key-g>\n"
     if not cfg_idle.exists():
         cfg_idle.write_text(idle_cfg_chunk, encoding="utf-8")
     else:
         text = cfg_idle.read_text(encoding="utf-8", errors="ignore")
         if "[PyGen]" not in text:
             cfg_idle.write_text(text + "\n" + idle_cfg_chunk, encoding="utf-8")
-        elif "enable_shell" not in text:
-            # Обновляем старую секцию, если она была записана ранее без enable_shell
-            cfg_idle.write_text(text.replace("[PyGen]\nenable=True", "[PyGen]\nenable=True\nenable_editor=True\nenable_shell=True"), encoding="utf-8")
-    print(f"      [✓] IDLE: расширение установлено в {idle_dir} (Alt+G)")
+        else:
+            cfg_idle.write_text(text.replace("<Alt-Key-g>", "<Control-Alt-Key-g>"), encoding="utf-8")
+    print(f"      [✓] IDLE: расширение установлено для всех версий Python (Ctrl+Alt+G / Alt+G)")
 
     # 6. PyCharm
     jb_bases = []
