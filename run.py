@@ -1823,7 +1823,22 @@ Categories=Utility;Development;
                         jb_found = True
                         print(f"      [✓] PyCharm ({ide.name}): добавлены External Tools")
     if not jb_found:
-        print("      [-] PyCharm: каталоги настроек пока не созданы")
+        share_tools = (home / ".local" / "share" / "pygen") if not is_win else (local_bin / "pygen_share")
+        share_tools.mkdir(parents=True, exist_ok=True)
+        (share_tools / "External Tools.xml").write_text(PYCHARM_TOOLS_XML, encoding="utf-8")
+        
+        # Предварительно создаем каталоги для стандартных версий PyCharm Community и Professional
+        for ver_name in ["PyCharmCE2024.1", "PyCharmCE2023.3", "PyCharm2024.1"]:
+            if is_win and appdata:
+                target_p = Path(appdata) / "JetBrains" / ver_name / "tools"
+            else:
+                target_p = home / ".config" / "JetBrains" / ver_name / "tools"
+            try:
+                target_p.mkdir(parents=True, exist_ok=True)
+                (target_p / "External Tools.xml").write_text(PYCHARM_TOOLS_XML, encoding="utf-8")
+            except Exception:
+                pass
+        print(f"      [✓] PyCharm: созданы шаблоны External Tools в {share_tools} и JetBrains")
 
     print("\n" + "=" * 60)
     print("          🎉 Установка успешно завершена!                 ")
@@ -1880,8 +1895,9 @@ def main():
         install_system()
         sys.exit(0)
 
-    # Запуск GUI, если указан флаг
-    if args.gui:
+    # Запуск GUI (по флагу --gui или если вызван как pygen-gui)
+    prog_name = Path(sys.argv[0]).stem.lower() if sys.argv and sys.argv[0] else ""
+    if "gui" in prog_name or args.gui:
         launch_stealth_gui()
         sys.exit(0)
 
