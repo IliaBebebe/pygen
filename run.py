@@ -1353,19 +1353,39 @@ Categories=Utility;Development;
             for d in appdata_py.iterdir():
                 if d.is_dir() and d.name.lower().startswith("python"):
                     user_sites.append(d / "site-packages")
+    else:
+        local_lib = home / ".local" / "lib"
+        if local_lib.exists():
+            for d in local_lib.iterdir():
+                if d.is_dir() and d.name.lower().startswith("python"):
+                    user_sites.append(d / "site-packages")
 
-        try:
-            import idlelib
-            idlelib_dir = Path(idlelib.__file__).parent
-            (idlelib_dir / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
-            def_path = idlelib_dir / "config-extensions.def"
-            if def_path.exists():
-                def_text = def_path.read_text(encoding="utf-8", errors="ignore")
-                if "[PyGen]" not in def_text:
-                    def_chunk = "\n\n[PyGen]\nenable= True\nenable_shell= True\nenable_editor= True\n\n[PyGen_cfgBindings]\npygen-solution= <Control-Alt-Key-g>\n"
-                    def_path.write_text(def_text + def_chunk, encoding="utf-8")
-        except Exception:
-            pass
+        import shutil
+        for py_name in ["python3", "python3.7", "python3.8", "python3.9", "python3.10", "python3.11", "python3.12", "python3.13"]:
+            py_bin = shutil.which(py_name)
+            if py_bin:
+                try:
+                    r = subprocess.run([py_bin, "-m", "site", "--user-site"], stdout=subprocess.PIPE, text=True, timeout=5)
+                    if r.stdout.strip():
+                        user_sites.append(Path(r.stdout.strip()))
+                except Exception:
+                    pass
+                ver = py_name.replace("python", "")
+                if ver:
+                    user_sites.append(home / ".local" / "lib" / f"python{ver}" / "site-packages")
+
+    try:
+        import idlelib
+        idlelib_dir = Path(idlelib.__file__).parent
+        (idlelib_dir / "PyGen.py").write_text(IDLE_PYGEN_PY, encoding="utf-8")
+        def_path = idlelib_dir / "config-extensions.def"
+        if def_path.exists():
+            def_text = def_path.read_text(encoding="utf-8", errors="ignore")
+            if "[PyGen]" not in def_text:
+                def_chunk = "\n\n[PyGen]\nenable= True\nenable_shell= True\nenable_editor= True\n\n[PyGen_cfgBindings]\npygen-solution= <Control-Alt-Key-g>\n"
+                def_path.write_text(def_text + def_chunk, encoding="utf-8")
+    except Exception:
+        pass
 
     for usp in set(user_sites):
         try:
