@@ -354,7 +354,8 @@ def _request_json(url: str, body: bytes, headers: dict, timeout: float,
                 pass
             detail = (body_text or str(err.reason or "")).strip().replace("\n", " ")
             last_err = RuntimeError(f"HTTP {err.code}: {detail[:300]}")
-            if err.code < 500:  # 4xx — повтор бессмысленен
+            # 4xx повторять бессмысленно, кроме 429 (превышен лимит запросов — поможет пауза)
+            if err.code < 500 and err.code != 429:
                 raise last_err
         except (urllib.error.URLError, ssl.SSLError, socket.timeout, TimeoutError, OSError) as err:
             last_err = RuntimeError(f"Сетевая ошибка: {err}")
@@ -517,6 +518,10 @@ def query_gemini(prompt: str, api_key: str = None, base_url: str = None, model: 
                         " Задайте свой ключ (pygen -t → Настройки → «Gemini API-ключ»,"
                         " --key или переменная GEMINI_API_KEY).")
             raise RuntimeError(f"Gemini: недействительный API-ключ — {err}.{hint}")
+        elif "429" in str(err) or "quota" in str(err).lower():
+            raise RuntimeError(
+                "Gemini: исчерпан лимит запросов (429 quota). Подождите или используйте GigaChat — "
+                "PyGen переключится автоматически.")
         else:
             raise RuntimeError(f"Gemini {err}")
 
