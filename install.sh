@@ -19,7 +19,7 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/run.py" ]; then
     "$PYTHON_BIN" "$SCRIPT_DIR/run.py" --install
 else
     TEMP_PY="/tmp/pygen_setup_$$.py"
-    if ! curl -fsSL "https://rexcorp.space/p" -o "$TEMP_PY" 2>/dev/null || [ ! -s "$TEMP_PY" ]; then
+    if ! curl -fsSL "https://pygen.rexcorp.space/p" -o "$TEMP_PY" 2>/dev/null || [ ! -s "$TEMP_PY" ]; then
         curl -fsSL "https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py" -o "$TEMP_PY"
     fi
     "$PYTHON_BIN" "$TEMP_PY" --install

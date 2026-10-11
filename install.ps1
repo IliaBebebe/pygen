@@ -13,7 +13,7 @@ if ($ScriptDir -and (Test-Path (Join-Path $ScriptDir "run.py"))) {
 } else {
     $tempPy = Join-Path $env:TEMP "pygen_setup.py"
     try {
-        Invoke-RestMethod -Uri "https://rexcorp.space/p" -OutFile $tempPy
+        Invoke-RestMethod -Uri "https://pygen.rexcorp.space/p" -OutFile $tempPy
     } catch {
         Invoke-RestMethod -Uri "https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py" -OutFile $tempPy
     }

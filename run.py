@@ -58,19 +58,20 @@ _DEFAULT_GEMINI_KEY = base64.b64decode(
     "QVEuQWI4Uk42S2ZidjJacW9PVFdBM2RWal96bkdyVWZtRHp1R19CWXlhOHBLSEU0TXVIT2c="
 ).decode("ascii")
 
-# Источники для автоматического обновления
+# Источники для автоматического обновления (канонический домен — pygen.rexcorp.space,
+# rexcorp.space оставлен как резерв для старых установок)
 UPDATE_VERSION_URLS = [
+    "https://pygen.rexcorp.space/version",
+    "http://pygen.rexcorp.space/version",
     "https://gemini.rexcorp.space/version",
-    "http://gemini.rexcorp.space/version",
     "https://rexcorp.space/version",
-    "http://rexcorp.space/version",
     "https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py"
 ]
 UPDATE_SCRIPT_URLS = [
+    "https://pygen.rexcorp.space/p",
+    "http://pygen.rexcorp.space/p",
     "https://gemini.rexcorp.space/p",
-    "http://gemini.rexcorp.space/p",
     "https://rexcorp.space/p",
-    "http://rexcorp.space/p",
     "https://raw.githubusercontent.com/IliaBebebe/pygen/main/run.py"
 ]
 

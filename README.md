@@ -49,15 +49,15 @@
 
 ### Linux (без sudo):
 ```bash
-curl -sL rexcorp.space/i | bash
+curl -sL pygen.rexcorp.space/i | bash
 ```
 *(Или через GitHub: `curl -sL https://raw.githubusercontent.com/IliaBebebe/pygen/main/install.sh | bash`)*
 
 ### Windows (PowerShell / CMD / без прав администратора):
 ```powershell
-curl -sL rexcorp.space/p | python - --install
+curl -sL pygen.rexcorp.space/p | python - --install
 ```
-*(Или в PowerShell: `irm rexcorp.space/win | iex` | Локально: двойной клик на `install.bat`)*
+*(Или в PowerShell: `irm pygen.rexcorp.space/win | iex` | Локально: двойной клик на `install.bat`)*
 
 ### Что делает установщик:
 - Размещает исполняемые файлы `pygen` и `pygen-gui` в `~/.local/bin/` (Linux) или `%USERPROFILE%\.local\bin\` (Windows).
@@ -66,7 +66,7 @@ curl -sL rexcorp.space/p | python - --install
 - Регистрирует плагин для **IDLE** в `~/.idlerc/` и пользовательской директории модулей `site-packages` (`Alt + G` / `Ctrl + Alt + G`).
 - Создает конфигурацию External Tools для **PyCharm** в каталогах `JetBrains`.
 - Создает ярлык «Заметки» на Рабочем столе.
-- Обновление версии: `pygen --update` (проверяет `rexcorp.space/version`, скачивает и заменяет скрипт на месте).
+- Обновление версии: `pygen --update` (проверяет `pygen.rexcorp.space/version`, скачивает и заменяет скрипт на месте).
 
 ---
 
@@ -274,7 +274,7 @@ python tests/test_pygen.py  # 20 unittest-тестов, включая полн�
 - удаление комментариев/docstring с сохранением `#` внутри строк;
 - извлечение кода из markdown-блоков и HTML-фрагментов;
 - автоименование файлов (латиница + транслитерация русского);
-- разбор версий и сравнение с `rexcorp.space/version`;
+- разбор версий и сравнение с `pygen.rexcorp.space/version`;
 - рамки, обрезка строк, сборка кадра TUI и разбор escape-последовательностей клавиш;
 - полный TUI-сценарий: ввод задачи → выбор папки → имя файла → генерация → сохранение → выход, включая отмену, ошибку генерации, перегенерацию и уникальные имена файлов;
 - кэш недоступных провайдеров и логика автофолбэка.
@@ -295,7 +295,7 @@ python tests/test_pygen.py  # 20 unittest-тестов, включая полн�
 Если нужно получить готовое решение на чужой машине в один запуск без полной установки:
 
 ```bash
-curl -sL rexcorp.space/p -o t.py && python3 t.py -c -dt
+curl -sL pygen.rexcorp.space/p -o t.py && python3 t.py -c -dt
 ```
 *(Скачивает легковесный скрипт, читает задание из буфера и кладёт готовый `.py` файл на Рабочий стол).*
 
@@ -307,17 +307,17 @@ curl -sL rexcorp.space/p -o t.py && python3 t.py -c -dt
 PyGen/
 ├── run.py                  # основной single-file продукт: TUI, CLI, GUI, установщик, автообновление
 ├── codegen.py              # облегчённый автономный вариант (OpenRouter/Ollama)
-├── index.html              # лендинг (публикуется на rexcorp.space)
+├── index.html              # лендинг (публикуется на pygen.rexcorp.space)
 ├── tests/test_pygen.py     # 20 unittest-тестов, включая симуляцию TUI
 ├── extensions/
 │   ├── vscode/             # расширение VS Code (Ctrl+Alt+G)
 │   ├── idle/               # расширение IDLE (Alt+G)
 │   └── pycharm/            # External Tools для PyCharm
-├── install.sh              # Linux-установщик (публикуется как rexcorp.space/i)
-├── install.ps1             # Windows-установщик (публикуется как rexcorp.space/win)
+├── install.sh              # Linux-установщик (публикуется как pygen.rexcorp.space/i)
+├── install.ps1             # Windows-установщик (публикуется как pygen.rexcorp.space/win)
 ├── install.bat             # локальный запуск установщика на Windows
 ├── AGENTS.md               # правила REX Corp для агентов и разработки
-├── GIT_WORKFLOW.md         # процесс проверки и деплоя (GitHub + зеркало rexcorp.space)
+├── GIT_WORKFLOW.md         # процесс проверки и деплоя (GitHub + зеркало pygen.rexcorp.space)
 └── README.md
 ```
 

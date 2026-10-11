@@ -3,7 +3,7 @@
 ## Project
 
 - Product: PyGen — автономный генератор процедурного Python-кода (TUI + CLI + скрытный GUI + расширения IDE)
-- Public URL: `https://rexcorp.space/` (PyGen landing; зеркало `https://rexcorp.space/1581/`)
+- Public URL: `https://pygen.rexcorp.space/` (PyGen landing; зеркало `https://pygen.rexcorp.space/1581/`)
 - Local source: `C:\Users\user\Desktop\REX_PROJECTS\PyGen`
 - Source of truth: GitHub `origin` -> `https://github.com/IliaBebebe/pygen.git` (branch `main`)
 - Public mirror repo: `C:\Users\user\Desktop\REX_PROJECTS\rexcorp-main` (`vps` -> `rex-vps-deploy:/srv/git/rexcorp-main.git`)
@@ -24,7 +24,7 @@
 ## Rules
 
 - `run.py` остаётся одним файлом и использует **только стандартную библиотеку** (никаких `pip`-зависимостей): он распространяется через `curl | python`.
-- Публичный ключ Gemini (`_DEFAULT_GEMINI_KEY`) — единственный секрет, допустимый в коде. Он хранится в **base64**, потому что GitHub secret scanning блокирует пуш открытых ключей Google (ключ при этом публичный: он лежит в открытой раздаче `rexcorp.space/p`).
+- Публичный ключ Gemini (`_DEFAULT_GEMINI_KEY`) — единственный секрет, допустимый в коде. Он хранится в **base64**, потому что GitHub secret scanning блокирует пуш открытых ключей Google (ключ при этом публичный: он лежит в открытой раздаче `pygen.rexcorp.space/p`).
   Ротация ключа: получить новый ключ → `python -c "import base64;print(base64.b64encode(b'НОВЫЙ_КЛЮЧ').decode())"` → заменить строку в `_DEFAULT_GEMINI_KEY` → проверить `python run.py --selftest` и реальный запрос `python run.py "выведи 42" -p gemini -q -d .` → обновить `C:\Users\user\Desktop\SERVER\inventory\services.md`.
 - Не коммитить `.env`, кэши, логи, `__pycache__`, `tests/__pycache__`, временные отладочные файлы (`_dbg*`, `_debug*`).
 - При смене `__version__` синхронно обновлять: этот репозиторий (GitHub) и зеркало `rexcorp-main` (`run.py`, `p`, `py`, `version`, `i`, `install.sh`, `w`, `win`, `index.html`, `1581/`).
@@ -53,7 +53,7 @@ git add .
 git commit -m "Release PyGen v3.0.0: modern TUI, rotated Gemini key, provider reliability"
 git push origin main
 
-# 2. Публичное зеркало (rexcorp.space)
+# 2. Публичное зеркало (pygen.rexcorp.space)
 cd C:\Users\user\Desktop\REX_PROJECTS\rexcorp-main
 git fetch vps
 git merge --ff-only vps/main
@@ -76,11 +76,11 @@ git push vps main
 
 # 3. VPS: fast-forward pull и проверка
 ssh rex-vps "cd /var/www/rexcorp/public && git checkout -- . && git pull --ff-only && cat version"
-curl.exe -s -o NUL -w "%{http_code} %{size_download}`n" https://rexcorp.space/
-curl.exe -s https://rexcorp.space/version
-curl.exe -s https://rexcorp.space/p | Select-String -Pattern '__version__'
+curl.exe -s -o NUL -w "%{http_code} %{size_download}`n" https://pygen.rexcorp.space/
+curl.exe -s https://pygen.rexcorp.space/version
+curl.exe -s https://pygen.rexcorp.space/p | Select-String -Pattern '__version__'
 ```
 
-Expected: `https://rexcorp.space/` → `200 27001`, `/version` → `3.0.0`, `/p` содержит `__version__ = "3.0.0"`.
+Expected: `https://pygen.rexcorp.space/` → `200 27001`, `/version` → `3.0.0`, `/p` содержит `__version__ = "3.0.0"`.
 
 Note: VPS working tree теряет локальные правки (`git checkout -- .`) — вся выкладка идёт только через git, production-файлы не редактируются вручную.
