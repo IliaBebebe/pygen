@@ -31,9 +31,11 @@
 ## Rules
 
 - `run.py` остаётся одним файлом и использует **только стандартную библиотеку** (никаких `pip`-зависимостей): он распространяется через `curl | python`.
-- Публичный ключ Gemini (`_DEFAULT_GEMINI_KEY`) — единственный секрет, допустимый в коде. Он хранится в **base64**, потому что GitHub secret scanning блокирует пуш открытых ключей Google (ключ при этом публичный: он лежит в открытой раздаче `pygen.rexcorp.space/p`).
-  Ротация ключа: получить новый ключ → `python -c "import base64;print(base64.b64encode(b'НОВЫЙ_КЛЮЧ').decode())"` → заменить строку в `_DEFAULT_GEMINI_KEY` → проверить `python run.py --selftest` и реальный запрос `python run.py "выведи 42" -p gemini -q -d .` → обновить `C:\Users\user\Desktop\SERVER\inventory\services.md`.
-- Не коммитить `.env`, кэши, логи, `__pycache__`, `tests/__pycache__`, временные отладочные файлы (`_dbg*`, `_debug*`).
+- **В коде нет ни одного API-ключа.** Gemini работает через релей `gemini.rexcorp.space`, который сам подставляет серверный ключ (`location ~ "^/v1beta/models/..."` в `/etc/nginx/sites-available/gemini.rexcorp.space`). Если клиент передал свой `?key=`, используется он; если нет — серверный.
+  Ротация ключа Gemini: получить новый ключ → заменить строку `set $gkey "..."` в конфиге релея на VPS (бэкап обязателен: `gemini.rexcorp.space.bak-<дата>-server-key`) → `nginx -t && systemctl reload nginx` → проверить `curl -X POST https://gemini.rexcorp.space/v1beta/models/gemini-3.5-flash:generateContent -H "Content-Type: application/json" -d '{"contents":[{"parts":[{"text":"Reply PONG"}]}]}'` (без ключа, ожидается `200` и текст от модели) → обновить `C:\Users\user\Desktop\SERVER\inventory\services.md`.
+  Проверка, что ключ не утёк в код: `python run.py --selftest` (проверка «Ключ Gemini не зашит в код») и `git grep -nE "AQ\.[A-Za-z0-9_-]{30,}"` (пусто).
+- Свой ключ пользователя (если нужен прямой доступ к Google) задаётся только вне репозитория: `--key`, переменная `GEMINI_API_KEY` или `~/.config/pygen/config.json`. Если ключ в конфиге устарел, клиент автоматически повторяет запрос без ключа — сработает серверный.
+- Не коммитить `.env`, кэши, логи, `__pycache__`, `tests/__pycache__`, временные отладочные файлы (`_dbg*`, `_debug*`), а также любые файлы с ключами (включая сгенерированные конфиги nginx с `set $gkey`).
 - При смене `__version__` синхронно обновлять: этот репозиторий (GitHub) и зеркало `rexcorp-main` (`pygen/run.py`, `pygen/p`, `pygen/py`, `pygen/version`, `pygen/i`, `pygen/install.sh`, `pygen/w`, `pygen/win`, `pygen/index.html`).
 - Старые ссылки `rexcorp.space/p`, `/py`, `/run.py`, `/i`, `/install.sh`, `/w`, `/win`, `/version` отдают `301` на новый домен (правило `location ~` в vhost главного домена). При переносе раздачи эти редиректы нужно сохранять, иначе сломается автообновление старых установок.
 - Новый vhost: `listen [::]:443 ssl;` **без** `ipv6only=on` — иначе `nginx -t` падает с `duplicate listen options` (главный домен уже задаёт эту опцию).

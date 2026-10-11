@@ -15,7 +15,6 @@ import tokenize
 import ast
 import html as _html
 import time
-import base64
 import subprocess
 import threading
 import shutil
@@ -47,16 +46,29 @@ _GIGACHAT_AUTH = "Basic MzgyMDE1ZDgtMzM2MC00NjI3LWFjZWUtNDZkOGFjZTIwNzkzOjQzMDFi
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_DEFAULT_MODEL = "deepseek-chat"
 
-# Google Gemini через изолированный быстрый VPS-прокси (РФ, без VPN)
+# Google Gemini через изолированный быстрый VPS-прокси (РФ, без VPN).
+# Ключ НЕ хранится в коде: релей gemini.rexcorp.space подставляет серверный ключ
+# самостоятельно. Свой ключ задаётся через --key, GEMINI_API_KEY или настройки TUI.
 GEMINI_DEFAULT_PROXY_URL = "https://gemini.rexcorp.space"
 GEMINI_DEFAULT_MODEL = "gemini-3.5-flash"
-# Публичный ключ Gemini-релея (ротация 2026: предыдущий ключ отключён).
-# Ключ публичный — он и так лежит в открытой раздаче rexcorp.space/p, но GitHub
-# secret scanning блокирует пуш открытых ключей Google, поэтому храним в base64.
-# Замена ключа: _DEFAULT_GEMINI_KEY = base64.b64encode(b"<новый ключ>").decode()
-_DEFAULT_GEMINI_KEY = base64.b64decode(
-    "QVEuQWI4Uk42S2ZidjJacW9PVFdBM2RWal96bkdyVWZtRHp1R19CWXlhOHBLSEU0TXVIT2c="
-).decode("ascii")
+
+def get_gemini_key(api_key: str = None, cfg: dict = None) -> str:
+    """Возвращает ключ Gemini из аргумента, окружения или конфига (может быть пустым)."""
+    if api_key:
+        return api_key.strip()
+    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    if cfg is None:
+        cfg = load_config()
+    return str(cfg.get("gemini_api_key", "") or "").strip()
+
+def build_gemini_url(proxy: str, model: str, key: str = "") -> str:
+    """Собирает URL запроса Gemini. Без ключа — релей подставит серверный."""
+    url = f"{proxy.rstrip('/')}/v1beta/models/{model}:generateContent"
+    if key:
+        url += f"?key={key}"
+    return url
 
 # Источники для автоматического обновления (канонический домен — pygen.rexcorp.space,
 # rexcorp.space оставлен как резерв для старых установок)
@@ -105,7 +117,7 @@ def load_config() -> dict:
     cfg = {
         "provider": "gigachat",
         "deepseek_api_key": "",
-        "gemini_api_key": _DEFAULT_GEMINI_KEY,
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
         "gemini_proxy_url": GEMINI_DEFAULT_PROXY_URL,
         "gemini_model": GEMINI_DEFAULT_MODEL
     }
@@ -455,13 +467,12 @@ def query_deepseek(prompt: str, api_key: str, model: str = DEEPSEEK_DEFAULT_MODE
 
 def query_gemini(prompt: str, api_key: str = None, base_url: str = None, model: str = None) -> str:
     cfg = load_config()
-    key = api_key or cfg.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or _DEFAULT_GEMINI_KEY
-    if not key:
-        raise RuntimeError("Для Gemini не указан API-ключ! Передайте через --key или сохраните в настройках.")
+    key = get_gemini_key(api_key, cfg)
 
-    proxy = (base_url or cfg.get("gemini_proxy_url") or GEMINI_DEFAULT_PROXY_URL).rstrip("/")
+    proxy = base_url or cfg.get("gemini_proxy_url") or GEMINI_DEFAULT_PROXY_URL
     m = model or cfg.get("gemini_model") or GEMINI_DEFAULT_MODEL
-    url = f"{proxy}/v1beta/models/{m}:generateContent?key={key}"
+    # Без своего ключа запрос идёт на релей, который подставляет серверный ключ
+    url = build_gemini_url(proxy, m, key)
 
     payload = {
         "systemInstruction": {
@@ -481,19 +492,30 @@ def query_gemini(prompt: str, api_key: str = None, base_url: str = None, model: 
     }
 
     # 1. Штатный запрос через urllib с повторами (работает на 100% школьных компьютеров)
-    data = None
+    def _do_request(request_url: str):
+        try:
+            return _request_json(request_url, body_bytes, headers, timeout=45, retries=3)
+        except RuntimeError as err:
+            if str(err).startswith("Сетевая ошибка"):
+                # 2. Если на рабочей станции запущен локальный TUN/Xray/VPN, мешающий SSL-рукопожатию,
+                # устанавливаем прямое сокетное соединение в обход TUN
+                return _gemini_socket_fallback(request_url, body_bytes)
+            raise
+
     try:
-        data = _request_json(url, body_bytes, headers, timeout=45, retries=3)
+        data = _do_request(url)
     except RuntimeError as err:
-        if str(err).startswith("Сетевая ошибка"):
-            # 2. Если на рабочей станции запущен локальный TUN/Xray/VPN, мешающий SSL-рукопожатию,
-            # устанавливаем прямое сокетное соединение в обход TUN
-            data = _gemini_socket_fallback(url, body_bytes)
+        if key and _looks_like_auth_error(err):
+            # Свой ключ устарел/недействителен — повторяем без ключа,
+            # чтобы ключ подставил серверный релей
+            data = _do_request(build_gemini_url(proxy, m, ""))
         elif _looks_like_auth_error(err):
-            hint = ""
-            if key == _DEFAULT_GEMINI_KEY:
-                hint = (" Встроенный публичный ключ Gemini отклонён — задайте свой ключ "
-                        "(pygen -t → Настройки → «Gemini API-ключ») или используйте GigaChat.")
+            hint = (" Задайте свой ключ (pygen -t → Настройки → «Gemini API-ключ», "
+                    "--key или переменная GEMINI_API_KEY) либо используйте GigaChat.")
+            if not key:
+                hint = (" Релей не подставил ключ (возможно, он отключён на сервере)."
+                        " Задайте свой ключ (pygen -t → Настройки → «Gemini API-ключ»,"
+                        " --key или переменная GEMINI_API_KEY).")
             raise RuntimeError(f"Gemini: недействительный API-ключ — {err}.{hint}")
         else:
             raise RuntimeError(f"Gemini {err}")
@@ -1700,7 +1722,7 @@ def handle_interactive_settings() -> str:
     cfg = load_config()
     current = cfg.get("provider", "gigachat")
     ds_key = cfg.get("deepseek_api_key", "")
-    gm_key = cfg.get("gemini_api_key", _DEFAULT_GEMINI_KEY)
+    gm_key = cfg.get("gemini_api_key", "")
     gm_proxy = cfg.get("gemini_proxy_url", GEMINI_DEFAULT_PROXY_URL)
 
     while True:
@@ -3026,8 +3048,8 @@ class SettingsScreen(Screen):
             return label
         if field in ("deepseek_api_key", "gemini_api_key"):
             v = cfg.get(field, "")
-            if field == "gemini_api_key" and (not v or v == _DEFAULT_GEMINI_KEY):
-                return "встроенный публичный ключ"
+            if field == "gemini_api_key" and not v:
+                return "не задан (используется серверный ключ релея)"
             return (v[:4] + "…" + v[-4:]) if len(v) > 8 else ("Задан" if v else "Не задан")
         if field == "gemini_model" and not cfg.get(field):
             return GEMINI_DEFAULT_MODEL
@@ -4111,9 +4133,31 @@ def run_selftest() -> bool:
         assert not _looks_like_auth_error(RuntimeError("HTTP 500: Internal Server Error"))
         clear_provider_dead()
 
-    def chk_gemini_key_format():
-        assert _DEFAULT_GEMINI_KEY.startswith("AQ."), "ключ Gemini должен быть в новом формате"
-        assert len(_DEFAULT_GEMINI_KEY) > 30
+    def chk_no_hardcoded_key():
+        # Ключ Gemini не должен храниться в коде: он либо у пользователя, либо на релее.
+        # Литералы собираются динамически, чтобы проверка не находила саму себя.
+        src = Path(__file__).read_text(encoding="utf-8", errors="replace")
+        key_re = re.compile("AQ" + r"\.[A-Za-z0-9_\-]{30,}")
+        found = key_re.search(src)
+        assert not found, f"в коде найден жёстко прописанный ключ Gemini: {found.group(0)[:8]}..."
+        legacy = "_DEFAULT_" + "GEMINI_KEY"
+        assert legacy not in src, "константа с ключом должна быть удалена из кода"
+        b64_call = "b64" + "decode"
+        assert b64_call not in src, "ключ не должен храниться даже в base64"
+
+    def chk_gemini_url_building():
+        no_key = build_gemini_url("https://gemini.rexcorp.space/", "gemini-3.5-flash", "")
+        assert no_key == "https://gemini.rexcorp.space/v1beta/models/gemini-3.5-flash:generateContent", no_key
+        with_key = build_gemini_url("https://gemini.rexcorp.space", "gemini-3.5-flash", "TESTKEY")
+        assert with_key.endswith(":generateContent?key=TESTKEY"), with_key
+        # Ключ из окружения имеет приоритет над конфигом, аргумент — над всем
+        os.environ.pop("GEMINI_API_KEY", None)
+        assert get_gemini_key(None, {"gemini_api_key": "cfg"}) == "cfg"
+        assert get_gemini_key("arg", {"gemini_api_key": "cfg"}) == "arg"
+        os.environ["GEMINI_API_KEY"] = "env"
+        assert get_gemini_key(None, {"gemini_api_key": "cfg"}) == "env"
+        os.environ.pop("GEMINI_API_KEY", None)
+        assert get_gemini_key(None, {}) == ""
 
     def chk_validate_code():
         ok, err = validate_code("a = int(input())\nprint(a)\n")
@@ -4144,7 +4188,8 @@ def run_selftest() -> bool:
     check("Буфер обмена (bool/str)", chk_clipboard)
     check("Проверка обновлений (сеть, короткий таймаут)", chk_update_guard)
     check("Надёжность провайдеров (кэш сбоев)", chk_provider_health)
-    check("Формат ключа Gemini", chk_gemini_key_format)
+    check("Ключ Gemini не зашит в код", chk_no_hardcoded_key)
+    check("Сборка Gemini-запроса (ключ/без ключа)", chk_gemini_url_building)
     check("Проверка синтаксиса кода", chk_validate_code)
 
     passed = 0

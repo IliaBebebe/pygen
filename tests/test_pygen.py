@@ -55,7 +55,7 @@ class TUIFlowTestBase(unittest.TestCase):
         run.CACHE_DIR = self.tmp / ".cache" / "pygen"
         run.RECENT_FILE = run.CACHE_DIR / "recent.json"
         run.save_config({"provider": "gigachat", "deepseek_api_key": "",
-                         "gemini_api_key": run._DEFAULT_GEMINI_KEY,
+                         "gemini_api_key": "",
                          "gemini_proxy_url": run.GEMINI_DEFAULT_PROXY_URL,
                          "gemini_model": run.GEMINI_DEFAULT_MODEL})
 
