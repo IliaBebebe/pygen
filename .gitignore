@@ -4,3 +4,9 @@ __pycache__/
 .env
 .venv
 *.log
+
+# Временные отладочные файлы
+_dbg*
+_debug*
+*.tmp
+*.bak

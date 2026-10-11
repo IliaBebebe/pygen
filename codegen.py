@@ -9,6 +9,7 @@ import re
 import io
 import tokenize
 import ast
+import html as _html
 from pathlib import Path
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434/v1"
@@ -38,7 +39,7 @@ SYSTEM_PROMPT = """Ты — ассистент по программирован
 7. Никаких вступлений, пояснений и маркдауна. Выдавай только чистый код."""
 
 def remove_comments_and_docstrings(source_code: str) -> str:
-    cleaned_lines = []
+    used_tokenizer = False
     try:
         tokens = tokenize.generate_tokens(io.StringIO(source_code).readline)
         tokens_without_comments = []
@@ -47,6 +48,7 @@ def remove_comments_and_docstrings(source_code: str) -> str:
                 continue
             tokens_without_comments.append((tok_type, tok_string, start, end, line))
         source_code = tokenize.untokenize(tokens_without_comments)
+        used_tokenizer = True
     except Exception:
         source_code = "\n".join(
             line for line in source_code.splitlines()
@@ -67,8 +69,15 @@ def remove_comments_and_docstrings(source_code: str) -> str:
                 doc_node = node.body[0]
                 docstring_ranges.append((doc_node.lineno, getattr(doc_node, "end_lineno", doc_node.lineno)))
 
+        def mark_bare_strings(node):
+            for stmt in node.body:
+                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) \
+                        and isinstance(stmt.value.value, str):
+                    docstring_ranges.append((stmt.lineno, getattr(stmt, "end_lineno", stmt.lineno)))
+
         if isinstance(tree, ast.Module):
             check_docstring(tree)
+            mark_bare_strings(tree)
         for subnode in ast.walk(tree):
             if isinstance(subnode, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 check_docstring(subnode)
@@ -96,21 +105,52 @@ def remove_comments_and_docstrings(source_code: str) -> str:
     for line in source_code.splitlines():
         if line.strip().startswith("#"):
             continue
-        line_clean = re.sub(r"#.*$", "", line)
-        if not line_clean.strip():
+        # Если токенизатор не сработал, аккуратно режем inline-комментарии,
+        # НЕ трогая '#' внутри строковых литералов.
+        if not used_tokenizer:
+            line = _strip_inline_comment(line)
+        if not line.strip():
             if not prev_blank:
                 clean_lines.append("")
                 prev_blank = True
         else:
-            clean_lines.append(line_clean.rstrip())
+            clean_lines.append(line.rstrip())
             prev_blank = False
 
     return "\n".join(clean_lines).strip() + "\n"
 
+def _strip_inline_comment(line: str) -> str:
+    """Убирает '#'-комментарий справа, не затрагивая '#' внутри строковых литералов."""
+    out = []
+    i, n = 0, len(line)
+    state = None  # None | "'" | '"'
+    while i < n:
+        ch = line[i]
+        if state:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(line[i + 1])
+                i += 2
+                continue
+            if ch == state:
+                state = None
+        else:
+            if ch in ("'", '"'):
+                state = ch
+                out.append(ch)
+            elif ch == "#":
+                break
+            else:
+                out.append(ch)
+        i += 1
+    return "".join(out).rstrip()
+
 def extract_python_code(text: str) -> str:
-    matches = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
+    text = text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    text = _html.unescape(text).replace("\xa0", " ")
+    matches = re.findall(r"```(?:python\w*|py)?\s*\n?(.*?)```", text, re.DOTALL)
     if matches:
-        return matches[0]
+        return matches[0].strip()
     return text.strip()
 
 def send_chat_completion(base_url: str, api_key: str, model: str, prompt: str) -> str:
